@@ -6,15 +6,6 @@ Each phase is a GitHub milestone; each task is an issue. Read-only features come
 actions behind confirmation dialogs. Every push to `main` releases a new version (see
 [CONTRIBUTING.md](CONTRIBUTING.md)); v1.0.0 closes phase 8.
 
-## Phase 0 — NAS on 25.10
-
-Upgrade the home NAS to TrueNAS 25.10 Goldeye (manual). Done when the NAS runs 25.10.8, apps work,
-and a non-admin test user exists.
-
-- [ ] #1 Save the NAS config and upgrade to TrueNAS 25.10.8
-- [ ] #2 Check apps, VM, AdGuard and proxy routes after the upgrade
-- [ ] #3 Create a non-admin test user on the NAS
-
 ## Phase 1 — Skeleton
 
 Repo, Axum server serving the embedded SvelteKit SPA, CI, container image, dev env, versioning.
