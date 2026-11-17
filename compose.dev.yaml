@@ -1,0 +1,52 @@
+# Development environment: Vite with hot reload + Rust server rebuilt on change.
+#   UID=$(id -u) GID=$(id -g) docker compose -f compose.dev.yaml up --build
+# Open http://localhost:5173 (Vite proxies /api and /ws to the server).
+name: truelite-dev
+
+x-user: &user
+  user: "${UID:-1000}:${GID:-1000}"
+
+services:
+  web:
+    <<: *user
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+      target: web
+      args: { UID: "${UID:-1000}", GID: "${GID:-1000}" }
+    command: sh -c "npm ci --no-audit --no-fund && npm run dev -- --host 0.0.0.0"
+    environment:
+      TRUELITE_BACKEND: http://server:8080
+    volumes:
+      - ./web:/app/web
+      - web_node_modules:/app/web/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - server
+
+  server:
+    <<: *user
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+      target: server
+      args: { UID: "${UID:-1000}", GID: "${GID:-1000}" }
+    command: watchexec --restart --watch src --watch Cargo.toml --exts rs,toml -- cargo run
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TRUELITE_LISTEN: 0.0.0.0:8080
+      RUST_LOG: ${RUST_LOG:-info,truelite=debug}
+    volumes:
+      - ./server:/app/server
+      - cargo_home:/cargo
+      - cargo_target:/target
+    ports:
+      - "8080:8080"
+
+volumes:
+  web_node_modules:
+  cargo_home:
+  cargo_target:

@@ -9,6 +9,8 @@ use rust_embed::Embed;
 
 #[derive(Embed)]
 #[folder = "../web/build/"]
+// In dev the web app is served by Vite, so web/build may not exist yet.
+#[allow_missing = true]
 struct Assets;
 
 pub async fn serve(uri: Uri) -> Response {

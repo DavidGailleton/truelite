@@ -26,6 +26,23 @@ Targets TrueNAS **25.10** (Goldeye).
 
 ## Development
 
+### With Docker (recommended)
+
+Only Docker is needed. Vite reloads the web app on save, and the Rust server is rebuilt and
+restarted when a file in `server/` changes.
+
+```sh
+UID=$(id -u) GID=$(id -g) docker compose -f compose.dev.yaml up --build
+```
+
+- Web app: http://localhost:5173 (proxies `/api` and `/ws` to the server)
+- Server: http://localhost:8080
+- Optional `.env` (copy `.env.example`) is passed to the server.
+- `UID`/`GID` make files created in `web/` belong to you, not root.
+- Reset dependencies and build cache: `docker compose -f compose.dev.yaml down -v`
+
+### Without Docker
+
 Requirements: Rust (stable), Node.js 26, npm.
 
 ```sh

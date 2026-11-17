@@ -2,6 +2,9 @@ import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
+// Where the Rust server runs in development (compose.dev.yaml sets it to the server container).
+const backend = process.env.TRUELITE_BACKEND ?? 'http://127.0.0.1:8080';
+
 export default defineConfig({
 	plugins: [
 		sveltekit({
@@ -15,8 +18,8 @@ export default defineConfig({
 	],
 	server: {
 		proxy: {
-			'/api': 'http://127.0.0.1:8080',
-			'/ws': { target: 'ws://127.0.0.1:8080', ws: true }
+			'/api': backend,
+			'/ws': { target: backend.replace(/^http/, 'ws'), ws: true }
 		}
 	}
 });
