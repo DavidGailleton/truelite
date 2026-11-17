@@ -1,0 +1,10 @@
+# Example for a TrueNAS "Custom App" (Apps > Discover > Install via YAML).
+services:
+  truelite:
+    image: ghcr.io/davidgailleton/truelite:latest
+    restart: unless-stopped
+    ports:
+      - "8090:8080"
+    environment:
+      TRUELITE_LISTEN: "0.0.0.0:8080"
+      RUST_LOG: "info"
