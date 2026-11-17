@@ -1,8 +1,11 @@
 # truelite
 
+[![CI](https://github.com/DavidGailleton/truelite/actions/workflows/ci.yml/badge.svg)](https://github.com/DavidGailleton/truelite/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/DavidGailleton/truelite)](https://github.com/DavidGailleton/truelite/releases)
+
 A light, fast, mobile-friendly web interface for [TrueNAS](https://www.truenas.com/) Community Edition.
 
-> Status: early development (phase 1, skeleton). Not usable yet.
+> Status: early development (phase 1, skeleton). Not usable yet. See the [roadmap](ROADMAP.md).
 > truelite is an independent project, not affiliated with iXsystems.
 
 ## Goals
