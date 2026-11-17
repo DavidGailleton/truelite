@@ -2,6 +2,9 @@
 
 mod config;
 mod static_files;
+// Wired into login (#11) and the WebSocket bridge (#16); only tests use it for now.
+#[allow(dead_code, unused_imports)]
+mod truenas;
 
 use std::net::SocketAddr;
 
