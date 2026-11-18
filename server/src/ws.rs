@@ -203,7 +203,8 @@ fn status(topic: &str, status: Status) -> String {
     encode(&TopicStatus { topic, status })
 }
 
-fn data(topic: &str, u: &Update) -> String {
+/// `fields` is the update's own, or its reshaped form for [`truenas::realtime::EVENT`].
+fn data(topic: &str, u: &Update, fields: &Value) -> String {
     let kind = match u.kind {
         UpdateKind::Added => "added",
         UpdateKind::Changed => "changed",
@@ -215,7 +216,7 @@ fn data(topic: &str, u: &Update) -> String {
         data: UpdateData {
             kind,
             id: &u.id,
-            fields: &u.fields,
+            fields,
         },
     })
 }
@@ -428,9 +429,22 @@ async fn forward(session: truenas::Session, topic: String, out: mpsc::Sender<Str
     if out.send(status(&topic, Status::Subscribed)).await.is_err() {
         return;
     }
+    let reshape = topic == truenas::realtime::EVENT;
+    let mut warned = false;
     while let Some(event) = sub.recv().await {
         let (msg, last) = match event {
-            Event::Update(u) => (data(&topic, &u), false),
+            Event::Update(u) if reshape => match truenas::realtime::compact(&u.fields) {
+                Some(fields) => (data(&topic, &u, &fields), false),
+                None => {
+                    // Once per subscription: the NAS would repeat it every 2 s.
+                    if !warned {
+                        tracing::warn!(%topic, "payload of an unexpected shape, not forwarded");
+                        warned = true;
+                    }
+                    continue;
+                }
+            },
+            Event::Update(u) => (data(&topic, &u, &u.fields), false),
             Event::Resumed => (status(&topic, Status::Resumed), false),
             Event::Missed(count) => (status(&topic, Status::Missed { count }), false),
             Event::Ended(e) => {
@@ -749,6 +763,34 @@ mod tests {
 
         send(&mut ws, json!({"op": "unsub", "topic": "alert.list"})).await;
         h.until_nas_saw("core.unsubscribe").await;
+    }
+
+    #[tokio::test]
+    async fn realtime_stats_arrive_reshaped_and_odd_ones_are_skipped() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        let topic = "reporting.realtime";
+        send(&mut ws, json!({"op": "sub", "topic": topic})).await;
+        assert_eq!(
+            next(&mut ws).await,
+            json!({"topic": topic, "status": "subscribed"})
+        );
+        let stats = |fields: Value| {
+            json!({"jsonrpc": "2.0", "method": "collection_update", "params": {
+                "msg": "added", "collection": topic, "fields": fields}})
+        };
+        let fixture: Value =
+            serde_json::from_str(include_str!("truenas/testdata/realtime.json")).unwrap();
+        // A payload of another shape is dropped; the next good one still comes through.
+        h.mock.push(stats(json!({"n": 1})));
+        h.mock.push(stats(fixture.clone()));
+        let got = next(&mut ws).await;
+        assert_eq!(got["topic"], topic);
+        assert_eq!(
+            got["data"]["fields"],
+            truenas::realtime::compact(&fixture).unwrap()
+        );
+        assert!(got["data"]["fields"].get("zfs").is_none());
     }
 
     #[tokio::test]

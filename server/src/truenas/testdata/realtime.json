@@ -1,0 +1,190 @@
+{
+ "cpu": {
+  "cpu": {
+   "usage": 12.34,
+   "temp": 47.5
+  },
+  "cpu0": {
+   "usage": 8.0,
+   "temp": 45.0
+  },
+  "cpu1": {
+   "usage": 9.7,
+   "temp": 46.0
+  },
+  "cpu2": {
+   "usage": 11.4,
+   "temp": 51.0
+  },
+  "cpu3": {
+   "usage": 13.1,
+   "temp": 44.0
+  },
+  "cpu4": {
+   "usage": 14.8,
+   "temp": 47.0
+  },
+  "cpu5": {
+   "usage": 16.5,
+   "temp": 48.0
+  },
+  "cpu6": {
+   "usage": 18.2,
+   "temp": 45.5
+  },
+  "cpu7": {
+   "usage": 19.9,
+   "temp": 49.0
+  }
+ },
+ "disks": {
+  "busy": 3.2,
+  "read_bytes": 524288.0,
+  "write_bytes": 1048576.0,
+  "read_ops": 12.0,
+  "write_ops": 30.0
+ },
+ "interfaces": {
+  "lo": {
+   "link_state": "LINK_STATE_UP",
+   "speed": 0,
+   "received_bytes_rate": 50.0,
+   "sent_bytes_rate": 50.0,
+   "received_bytes": 0,
+   "sent_bytes": 0
+  },
+  "enp3s0": {
+   "link_state": "LINK_STATE_UP",
+   "speed": 1000,
+   "received_bytes_rate": 1250.4,
+   "sent_bytes_rate": 360.2,
+   "received_bytes": 0,
+   "sent_bytes": 0
+  },
+  "enp4s0": {
+   "link_state": "LINK_STATE_DOWN",
+   "speed": 0,
+   "received_bytes_rate": 0,
+   "sent_bytes_rate": 0,
+   "received_bytes": 0,
+   "sent_bytes": 0
+  },
+  "br0": {
+   "link_state": "LINK_STATE_UP",
+   "speed": 0,
+   "received_bytes_rate": 1200.6,
+   "sent_bytes_rate": 340.1,
+   "received_bytes": 0,
+   "sent_bytes": 0
+  },
+  "docker0": {
+   "link_state": "LINK_STATE_UP",
+   "speed": 10000,
+   "received_bytes_rate": 10.0,
+   "sent_bytes_rate": 12.0,
+   "received_bytes": 0,
+   "sent_bytes": 0
+  },
+  "br-3f2a9c1d7e44": {
+   "link_state": "LINK_STATE_UP",
+   "speed": 10000,
+   "received_bytes_rate": 80.0,
+   "sent_bytes_rate": 75.0,
+   "received_bytes": 0,
+   "sent_bytes": 0
+  },
+  "veth1a2b3c4": {
+   "link_state": "LINK_STATE_UP",
+   "speed": 10000,
+   "received_bytes_rate": 40.0,
+   "sent_bytes_rate": 38.0,
+   "received_bytes": 0,
+   "sent_bytes": 0
+  },
+  "veth5d6e7f8": {
+   "link_state": "LINK_STATE_UP",
+   "speed": 10000,
+   "received_bytes_rate": 40.0,
+   "sent_bytes_rate": 38.0,
+   "received_bytes": 0,
+   "sent_bytes": 0
+  },
+  "veth9a0b1c2": {
+   "link_state": "LINK_STATE_UP",
+   "speed": 10000,
+   "received_bytes_rate": 40.0,
+   "sent_bytes_rate": 38.0,
+   "received_bytes": 0,
+   "sent_bytes": 0
+  },
+  "vethd3e4f5a": {
+   "link_state": "LINK_STATE_UP",
+   "speed": 10000,
+   "received_bytes_rate": 40.0,
+   "sent_bytes_rate": 38.0,
+   "received_bytes": 0,
+   "sent_bytes": 0
+  },
+  "veth6b7c8d9": {
+   "link_state": "LINK_STATE_UP",
+   "speed": 10000,
+   "received_bytes_rate": 40.0,
+   "sent_bytes_rate": 38.0,
+   "received_bytes": 0,
+   "sent_bytes": 0
+  },
+  "vethe0f1a2b": {
+   "link_state": "LINK_STATE_UP",
+   "speed": 10000,
+   "received_bytes_rate": 40.0,
+   "sent_bytes_rate": 38.0,
+   "received_bytes": 0,
+   "sent_bytes": 0
+  }
+ },
+ "memory": {
+  "arc_size": 25000000000,
+  "arc_free_memory": 2000000000,
+  "arc_available_memory": 4000000000,
+  "physical_memory_total": 68719476736,
+  "physical_memory_available": 30000000000
+ },
+ "zfs": {
+  "demand_accesses_per_second": 0,
+  "demand_data_accesses_per_second": 7,
+  "demand_metadata_accesses_per_second": 14,
+  "demand_data_hits_per_second": 21,
+  "demand_data_io_hits_per_second": 28,
+  "demand_metadata_hits_per_second": 35,
+  "demand_metadata_io_hits_per_second": 42,
+  "demand_data_misses_per_second": 49,
+  "demand_metadata_misses_per_second": 56,
+  "demand_data_hit_percentage": 63,
+  "demand_data_io_hit_percentage": 70,
+  "demand_data_miss_percentage": 77,
+  "demand_metadata_hit_percentage": 84,
+  "demand_metadata_io_hit_percentage": 91,
+  "demand_metadata_miss_percentage": 98,
+  "l2arc_hits_per_second": 5,
+  "l2arc_misses_per_second": 12,
+  "total_l2arc_accesses_per_second": 19,
+  "l2arc_access_hit_percentage": 26,
+  "l2arc_miss_percentage": 33,
+  "bytes_read_per_second_from_the_l2arc": 40,
+  "bytes_written_per_second_to_the_l2arc": 47
+ },
+ "pools": {
+  "tank": {
+   "read_ops": 4.0,
+   "write_ops": 9.0,
+   "read_bytes": 100000.0,
+   "write_bytes": 200000.0
+  },
+  "boot-pool": {
+   "read_ops": 0.0,
+   "write_ops": 1.0,
+   "read_bytes": 0.0,
+   "write_bytes": 4096.0
+  }
+ }
+}

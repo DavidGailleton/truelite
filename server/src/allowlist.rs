@@ -16,6 +16,8 @@ const METHODS: &[&str] = &[
 const EVENTS: &[&str] = &[
     // Shell: live alert badge (ALERT_LIST_READ).
     "alert.list",
+    // Dashboard: live CPU, RAM, network (REPORTING_READ). Reshaped by `truenas::realtime`.
+    "reporting.realtime",
 ];
 
 /// Exact-name lists of the methods and events the bridge forwards. No prefixes, no wildcards.
@@ -71,7 +73,9 @@ mod tests {
         ] {
             assert!(!a.method(near), "{near:?}");
         }
+        assert!(a.event("reporting.realtime"));
         assert!(!a.event("alert"));
+        assert!(!a.event("reporting.realtime:{\"interval\": 2}"));
         assert!(!a.method(""));
     }
 

@@ -1051,7 +1051,8 @@ mod tests {
 
     /// Against a real NAS: subscribe to `reporting.realtime` and wait for one event. Receiving
     /// it proves events are routed by the name given to `core.subscribe`.
-    /// Same variables as `nas_login_smoke`; `cargo test nas_events_smoke -- --ignored --nocapture`.
+    /// Prints the payload and its compact form (`truenas::realtime`). Same variables as
+    /// `nas_login_smoke`; `cargo test nas_events_smoke -- --ignored --nocapture`.
     #[tokio::test]
     #[ignore = "needs a real NAS and credentials"]
     async fn nas_events_smoke() {
@@ -1078,6 +1079,12 @@ mod tests {
             .map(|o| o.keys().cloned().collect())
             .unwrap_or_default();
         println!("reporting.realtime {:?}: {keys:?}", u.kind);
+        // Full payload (fixture for `realtime.rs` tests) and what the browser would get.
+        println!("{}", serde_json::to_string_pretty(&u.fields).unwrap());
+        println!(
+            "compact: {:?}",
+            crate::truenas::realtime::compact(&u.fields)
+        );
         drop(sub);
         tokio::time::sleep(Duration::from_millis(200)).await;
         within(s.logout()).await;

@@ -64,6 +64,33 @@ A call is never sent twice: after a `timeout` or `reconnecting` it may or may no
 - `{"topic": …, "status": "ended", "error": {…}}`: refused (`not_allowed`, `nas`, `busy`) or
   ended by the NAS. Nothing follows; subscribe again to retry.
 
+## Reshaped topics
+
+Most topics forward the NAS event's `fields` as they are. Some streams are large and mostly
+unused, so the server sends only what the web app shows:
+
+**`reporting.realtime`**: live statistics every 2 s (needs the `REPORTING_READ` role). There is
+nothing to query: each message is a full sample, and `kind` is whatever the NAS sent. A sample
+the server cannot read is skipped. `fields`:
+
+```json
+{"cpu": 12.3, "temp": 47.5,
+ "mem": {"total": 68719476736, "available": 30000000000, "arc": 25000000000},
+ "net": {"enp3s0": {"rx": 1250, "tx": 360, "up": true, "speed": 1000}}}
+```
+
+| field | unit |
+| --- | --- |
+| `cpu` | whole-CPU usage, %, one decimal |
+| `temp` | CPU temperature in °C (the hottest core when there is no overall value), or `null` |
+| `mem.total`, `mem.available`, `mem.arc` | bytes: physical memory, memory available, ZFS cache (ARC) size |
+| `net.<name>.rx`, `.tx` | bytes per second received and sent |
+| `net.<name>.up` | link up |
+| `net.<name>.speed` | link speed in Mb/s, or `null` when unknown |
+
+`net` lists physical interfaces and bridges, without loopback and container or VM plumbing
+(`veth*`, `docker*`, `br-*`, `vnet*`, `tap*`, …).
+
 ## Link and session
 
 - `{"op": "link", "state": "reconnecting"}`: the NAS connection dropped; the server is
