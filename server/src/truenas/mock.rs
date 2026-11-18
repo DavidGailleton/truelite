@@ -416,7 +416,7 @@ pub fn fake_nas() -> (
                 nas.authed.remove(&conn);
                 Reply::Result(Value::Null)
             }
-            "core.subscribe" if *p == "pool.query" => Reply::Error(
+            "core.subscribe" if *p == "vm.query" => Reply::Error(
                 json!({"code": -32001, "message": "Method call error", "data": {
                 "error": 13, "errname": "EACCES", "reason": "Not authorized"}}),
             ),

@@ -203,7 +203,18 @@ fn status(topic: &str, status: Status) -> String {
     encode(&TopicStatus { topic, status })
 }
 
-/// `fields` is the update's own, or its reshaped form for [`truenas::realtime::EVENT`].
+/// The function that cuts a topic's events down to what the web app shows, for the large ones
+/// (documented in `docs/ws-protocol.md`, "Reshaped topics"). It returns `None` for a payload of
+/// another shape, which is then skipped.
+fn reshaper(topic: &str) -> Option<fn(&Value) -> Option<Value>> {
+    match topic {
+        truenas::realtime::EVENT => Some(truenas::realtime::compact),
+        truenas::pools::EVENT => Some(truenas::pools::compact),
+        _ => None,
+    }
+}
+
+/// `fields` is the update's own, or its reshaped form (see [`reshaper`]).
 fn data(topic: &str, u: &Update, fields: &Value) -> String {
     let kind = match u.kind {
         UpdateKind::Added => "added",
@@ -429,22 +440,25 @@ async fn forward(session: truenas::Session, topic: String, out: mpsc::Sender<Str
     if out.send(status(&topic, Status::Subscribed)).await.is_err() {
         return;
     }
-    let reshape = topic == truenas::realtime::EVENT;
+    let reshape = reshaper(&topic);
     let mut warned = false;
     while let Some(event) = sub.recv().await {
         let (msg, last) = match event {
-            Event::Update(u) if reshape => match truenas::realtime::compact(&u.fields) {
-                Some(fields) => (data(&topic, &u, &fields), false),
-                None => {
-                    // Once per subscription: the NAS would repeat it every 2 s.
-                    if !warned {
-                        tracing::warn!(%topic, "payload of an unexpected shape, not forwarded");
-                        warned = true;
+            Event::Update(u) => match reshape {
+                // A removal carries only the id: nothing to reshape.
+                Some(compact) if !u.fields.is_null() => match compact(&u.fields) {
+                    Some(fields) => (data(&topic, &u, &fields), false),
+                    None => {
+                        // Once per subscription: the NAS could repeat it every 2 s.
+                        if !warned {
+                            tracing::warn!(%topic, "payload of an unexpected shape, not forwarded");
+                            warned = true;
+                        }
+                        continue;
                     }
-                    continue;
-                }
+                },
+                _ => (data(&topic, &u, &u.fields), false),
             },
-            Event::Update(u) => (data(&topic, &u, &u.fields), false),
             Event::Resumed => (status(&topic, Status::Resumed), false),
             Event::Missed(count) => (status(&topic, Status::Missed { count }), false),
             Event::Ended(e) => {
@@ -750,7 +764,7 @@ mod tests {
             .count();
         assert_eq!(subscribes, 1);
 
-        send(&mut ws, json!({"op": "sub", "topic": "pool.query"})).await;
+        send(&mut ws, json!({"op": "sub", "topic": "app.query"})).await;
         let refused = next(&mut ws).await;
         assert_eq!(
             (
@@ -758,7 +772,7 @@ mod tests {
                 &refused["status"],
                 &refused["error"]["code"]
             ),
-            (&json!("pool.query"), &json!("ended"), &json!("not_allowed"))
+            (&json!("app.query"), &json!("ended"), &json!("not_allowed"))
         );
 
         send(&mut ws, json!({"op": "unsub", "topic": "alert.list"})).await;
@@ -794,11 +808,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pool_changes_arrive_without_topology_and_removals_with_their_id() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        let topic = "pool.query";
+        send(&mut ws, json!({"op": "sub", "topic": topic})).await;
+        assert_eq!(
+            next(&mut ws).await,
+            json!({"topic": topic, "status": "subscribed"})
+        );
+        let fixture: Value =
+            serde_json::from_str(include_str!("truenas/testdata/pool_event.json")).unwrap();
+        h.mock.push(
+            json!({"jsonrpc": "2.0", "method": "collection_update", "params": {
+            "msg": "changed", "collection": topic, "id": 1, "fields": fixture.clone()}}),
+        );
+        let got = next(&mut ws).await;
+        assert_eq!(got["data"]["kind"], "changed");
+        assert_eq!(got["data"]["id"], 1);
+        assert_eq!(
+            got["data"]["fields"],
+            truenas::pools::compact(&fixture).unwrap()
+        );
+        assert!(got["data"]["fields"].get("topology").is_none());
+
+        h.mock.push(
+            json!({"jsonrpc": "2.0", "method": "collection_update", "params": {
+            "msg": "removed", "collection": topic, "id": 1}}),
+        );
+        let got = next(&mut ws).await;
+        assert_eq!(got["data"]["kind"], "removed");
+        assert_eq!(got["data"]["id"], 1);
+    }
+
+    #[tokio::test]
     async fn an_event_the_nas_refuses_ends_with_its_name() {
-        static EVENTS: &[&str] = &["pool.query"];
+        static EVENTS: &[&str] = &["vm.query"];
         let h = Harness::with(Allowlist::new(&[], EVENTS)).await;
         let mut ws = h.open().await;
-        send(&mut ws, json!({"op": "sub", "topic": "pool.query"})).await;
+        send(&mut ws, json!({"op": "sub", "topic": "vm.query"})).await;
         let ended = next(&mut ws).await;
         assert_eq!(ended["status"], "ended");
         assert_eq!(ended["error"]["code"], "nas");

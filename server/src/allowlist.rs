@@ -10,6 +10,10 @@ const METHODS: &[&str] = &[
     "system.info",
     // Shell: alert badge (ALERT_LIST_READ).
     "alert.list",
+    // Dashboard: pool health and raw space, with `select` (POOL_READ).
+    "pool.query",
+    // Dashboard: usable space of the pools' root datasets (DATASET_READ).
+    "pool.dataset.query",
 ];
 
 /// Events the web app may subscribe to, by exact name.
@@ -18,6 +22,10 @@ const EVENTS: &[&str] = &[
     "alert.list",
     // Dashboard: live CPU, RAM, network (REPORTING_READ). Reshaped by `truenas::realtime`.
     "reporting.realtime",
+    // Dashboard: pool changes (POOL_READ). Reshaped by `truenas::pools` (no topology).
+    "pool.query",
+    // Dashboard: scrub and resilver progress (POOL_SCRUB_READ).
+    "pool.scan",
 ];
 
 /// Exact-name lists of the methods and events the bridge forwards. No prefixes, no wildcards.
@@ -74,6 +82,9 @@ mod tests {
             assert!(!a.method(near), "{near:?}");
         }
         assert!(a.event("reporting.realtime"));
+        assert!(a.method("pool.query") && a.method("pool.dataset.query"));
+        assert!(a.event("pool.query") && a.event("pool.scan"));
+        assert!(!a.method("pool.scan") && !a.method("pool.dataset"));
         assert!(!a.event("alert"));
         assert!(!a.event("reporting.realtime:{\"interval\": 2}"));
         assert!(!a.method(""));

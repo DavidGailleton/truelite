@@ -963,7 +963,7 @@ mod tests {
         let (mock, _nas, ep) = start().await;
         let s = admin(&ep, opts()).await;
         for _ in 0..2 {
-            let err = within(s.subscribe("pool.query")).await.unwrap_err();
+            let err = within(s.subscribe("vm.query")).await.unwrap_err();
             let Error::Rpc(e) = &err else {
                 panic!("expected Rpc, got {err:?}")
             };

@@ -91,6 +91,15 @@ the server cannot read is skipped. `fields`:
 `net` lists physical interfaces and bridges, without loopback and container or VM plumbing
 (`veth*`, `docker*`, `br-*`, `vnet*`, `tap*`, …).
 
+**`pool.query`**: pool changes (needs `POOL_READ`). TrueNAS sends the whole pool with its disk
+layout (`topology`) on every change; the server keeps only the fields the web app selects in its
+own `pool.query` call: `id`, `name`, `status`, `healthy`, `warning`, `status_code`,
+`status_detail`, `size`, `allocated`, `free`, `scan` (the list is `FIELDS` in
+`server/src/truenas/pools.rs`). A `removed` event has only its `id`.
+
+`pool.scan` (scrub and resilver progress, `POOL_SCRUB_READ`) is small and forwarded as it is:
+`fields` = `{"name": "tank", "scan": {…}}`, the same `scan` object as in `pool.query`.
+
 ## Link and session
 
 - `{"op": "link", "state": "reconnecting"}`: the NAS connection dropped; the server is

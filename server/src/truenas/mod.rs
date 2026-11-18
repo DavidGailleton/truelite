@@ -11,6 +11,7 @@ mod error;
 mod events;
 #[cfg(test)]
 pub(crate) mod mock;
+pub mod pools;
 pub mod realtime;
 mod rpc;
 mod session;
