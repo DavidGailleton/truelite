@@ -44,7 +44,7 @@ One screen with what needs attention first: alerts, pool health, live CPU/RAM/ne
 Done when the dashboard works on a phone at 360 px with live data and no polling.
 
 - [ ] #23 System info card
-- [ ] #24 Live CPU, RAM and network with SVG sparklines
+- [x] #24 Live CPU, RAM and network with SVG sparklines
 - [ ] #25 Pool health and usage bars
 - [ ] #26 Apps summary card
 - [ ] #27 Alerts list with live updates, attention first

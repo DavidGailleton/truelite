@@ -77,6 +77,13 @@
 	--destructive-tint: color-mix(in srgb, var(--destructive) 10%, transparent);
 	--link-tint: color-mix(in srgb, var(--link) 10%, transparent);
 
+	/* Charts: green for the main series, gray for the comparison one (ui-style §2.2). Defined from
+	   role tokens, so dark mode follows without redefining them. */
+	--chart-primary: var(--success);
+	--chart-secondary: var(--text-subdued);
+	--chart-track: var(--surface-inset);
+	--chart-fill-opacity: 0.12;
+
 	/* Depth: hairline ring + soft shadow, never a CSS border on cards. */
 	--shadow-ring: 0 0 0 1px var(--alpha-black-5);
 	--shadow-xs: 0 1px 2px var(--alpha-black-6);

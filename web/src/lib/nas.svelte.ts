@@ -22,10 +22,44 @@ export function closeNas(): void {
 	connection.status = 'connecting';
 }
 
+/** Whether the page is on screen (not a background tab, not a locked phone). */
+const page = $state({ visible: true });
+let tracking = false;
+
+function trackVisibility(): void {
+	if (tracking || typeof document === 'undefined') return;
+	tracking = true;
+	const update = () => (page.visible = document.visibilityState !== 'hidden');
+	update();
+	document.addEventListener('visibilitychange', update);
+}
+
+export interface TopicOptions {
+	/**
+	 * Unsubscribe while the page is hidden and subscribe again when it comes back (the handler
+	 * then gets `subscribed` again). For streams like live stats that cost the NAS, the network
+	 * and the phone's battery for nobody.
+	 */
+	whenVisible?: boolean;
+}
+
 /**
  * Follows a topic while the calling component is mounted. Call from component setup. The handler
- * should query the state again whenever `needsRefetch(message)` is true.
+ * should query the state again whenever `needsRefetch(message)` is true. After `ended`, call
+ * `retry()` to subscribe again.
  */
-export function useTopic(topic: string, handler: TopicHandler): void {
-	$effect(() => nas().subscribe(topic, handler));
+export function useTopic(
+	topic: string,
+	handler: TopicHandler,
+	options: TopicOptions = {}
+): { retry(): void } {
+	const { whenVisible = false } = options;
+	if (whenVisible) trackVisibility();
+	let attempt = $state(0);
+	$effect(() => {
+		void attempt; // re-run on retry()
+		if (whenVisible && !page.visible) return;
+		return nas().subscribe(topic, handler);
+	});
+	return { retry: () => attempt++ };
 }
