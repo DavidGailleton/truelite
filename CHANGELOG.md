@@ -2,6 +2,26 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.10.1 — 2026-11-18
+
+### Fixes
+
+- **web:** Say "unexpected answer" instead of "can't reach" on an unknown login reply
+
+### Refactoring
+
+- **web:** Reuse Icon and endSession, simplify safeNext and the banner check
+
+### Documentation
+
+- Add server/ and web/ CLAUDE.md with skill loading
+
+### Other
+
+- Commit the agent skills and Claude settings
+- **web:** Add a Prettier config and lint check
+- **web:** Format with Prettier
+
 ## v0.10.0 — 2026-11-18
 
 ### Features
