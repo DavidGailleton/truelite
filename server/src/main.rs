@@ -1,13 +1,13 @@
-//! truelite server: serves the web app and (later) bridges it to the TrueNAS API.
+//! truelite server: serves the web app and bridges it to the TrueNAS API.
 
+mod allowlist;
 mod config;
 mod login;
 mod rate_limit;
 mod sessions;
 mod static_files;
-// Calls and event subscriptions are used by the WebSocket bridge (#16).
-#[allow(dead_code, unused_imports)]
 mod truenas;
+mod ws;
 
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -20,6 +20,7 @@ use axum::{Json, Router};
 use serde_json::json;
 use tracing_subscriber::EnvFilter;
 
+use crate::allowlist::Allowlist;
 use crate::config::Config;
 use crate::login::Login;
 use crate::rate_limit::LimitOptions;
@@ -38,6 +39,13 @@ const LOGIN_BODY_LIMIT: usize = 4096;
 pub struct AppState {
     pub sessions: SessionStore,
     pub login: Login,
+    pub allowlist: Allowlist,
+}
+
+impl FromRef<AppState> for Allowlist {
+    fn from_ref(state: &AppState) -> Self {
+        state.allowlist
+    }
 }
 
 impl FromRef<AppState> for Login {
@@ -100,6 +108,7 @@ async fn main() {
     let app = router(AppState {
         sessions: sessions.clone(),
         login,
+        allowlist: Allowlist::default(),
     });
     let listener = tokio::net::TcpListener::bind(config.listen)
         .await
@@ -123,6 +132,7 @@ pub fn router(state: AppState) -> Router {
         .route_layer(DefaultBodyLimit::max(LOGIN_BODY_LIMIT))
         .route("/api/session", get(session_info))
         .route("/api/logout", post(logout))
+        .route("/ws", get(ws::upgrade))
         .fallback(static_files::serve)
         .with_state(state)
 }
@@ -180,6 +190,7 @@ mod tests {
         AppState {
             sessions: SessionStore::new(StoreOptions::default()),
             login: Login::new(None, SessionOptions::default(), LimitOptions::default()),
+            allowlist: Allowlist::default(),
         }
     }
 

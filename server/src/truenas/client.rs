@@ -71,6 +71,7 @@ struct Inner {
     tx: mpsc::Sender<Command>,
     next_id: AtomicU64,
     call_timeout: Duration,
+    #[cfg_attr(not(test), expect(dead_code, reason = "only tests wait for the close"))]
     closed: watch::Receiver<bool>,
 }
 
@@ -195,6 +196,7 @@ impl Client {
         Ok((id, fut))
     }
 
+    #[cfg(test)]
     pub fn is_closed(&self) -> bool {
         *self.inner.closed.borrow()
     }
@@ -205,7 +207,8 @@ impl Client {
         let _ = self.inner.tx.send(Command::Kill).await;
     }
 
-    /// Resolves once the connection is gone (the reconnect logic waits on this).
+    /// Resolves once the connection is gone.
+    #[cfg(test)]
     pub async fn closed(&self) {
         let mut rx = self.inner.closed.clone();
         let _ = rx.wait_for(|c| *c).await;
@@ -351,8 +354,9 @@ fn handle(text: &str, pending: &mut HashMap<u64, Reply>, notifs: &mpsc::Sender<N
 
 #[cfg(test)]
 mod tests {
+    use super::super::Fingerprint;
     use super::super::mock::{Mock, Reply as R, within};
-    use super::super::{Fingerprint, client_config};
+    use super::super::tls::client_config;
     use super::*;
     use serde_json::json;
 

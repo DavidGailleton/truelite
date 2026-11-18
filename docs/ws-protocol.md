@@ -1,0 +1,73 @@
+# Browser ↔ server WebSocket protocol
+
+The web app talks to the NAS only through `GET /ws` on the truelite server. It is our own small
+protocol, not raw JSON-RPC: the server forwards only the methods and events on its allowlist
+(`server/src/allowlist.rs`). Calls run as the logged-in TrueNAS user, so TrueNAS roles still
+apply. Every message is one JSON text frame of at most 64 KiB; anything larger closes the socket.
+
+## Opening
+
+Open `/ws` with the session cookie (set by `POST /api/login`). There is no cookie or session →
+the upgrade is refused with `401`; go to the login page. The first message is always the link
+state:
+
+```json
+{"op": "link", "state": "up"}
+```
+
+## Calls
+
+```json
+→ {"op": "call", "id": 1, "method": "system.info", "params": []}
+← {"id": 1, "result": {"hostname": "truenas", "...": "..."}}
+← {"id": 1, "error": {"code": "not_allowed", "message": "truelite does not allow this action"}}
+```
+
+- `id` is a number from 0 to 2³²−1, chosen by the browser; replies come back as they finish,
+  not in order. `params` is a list (positional, as TrueNAS takes them) and may be left out.
+- A message that is not valid gets `bad_request`, with `"id": null` when no id could be read.
+  The socket stays open.
+
+Error `code`s, with `message` always in plain words:
+
+| code | meaning | what the app does |
+| --- | --- | --- |
+| `not_allowed` | method or event not on the allowlist | a bug in the app |
+| `bad_request` | malformed message | a bug in the app |
+| `nas` | the NAS refused; `errname` (`EACCES`, …) when it gave one | show `message` |
+| `timeout` | the NAS did not answer in time | offer a retry |
+| `reconnecting` | the link to the NAS did not come back in time | offer a retry |
+| `busy` | too many calls or topics at once on this socket | retry later |
+| `logged_out` | the session has ended | the socket closes with 4401 right after |
+
+A call is never sent twice: after a `timeout` or `reconnecting` it may or may not have run.
+
+## Subscriptions
+
+```json
+→ {"op": "sub", "topic": "alert.list"}
+← {"topic": "alert.list", "status": "subscribed"}
+← {"topic": "alert.list", "data": {"kind": "added", "id": 7, "fields": {"...": "..."}}}
+→ {"op": "unsub", "topic": "alert.list"}
+```
+
+- Wait for `subscribed`, then query the current state (`alert.list` call): changes after
+  that point arrive as `data`. `kind` is `added`, `changed`, `removed` or `other`.
+- Subscribing twice to a topic on one socket does nothing. `unsub` of an unknown topic is
+  ignored. Closing the socket unsubscribes everything.
+- `{"topic": …, "status": "resumed"}`: subscribed again after a reconnect. Events of the gap
+  are lost: query the state again.
+- `{"topic": …, "status": "missed", "count": n}`: the page read too slowly. Query again.
+- `{"topic": …, "status": "ended", "error": {…}}`: refused (`not_allowed`, `nas`, `busy`) or
+  ended by the NAS. Nothing follows; subscribe again to retry.
+
+## Link and session
+
+- `{"op": "link", "state": "reconnecting"}`: the NAS connection dropped; the server is
+  reconnecting. Show "Reconnecting to NAS"; calls made now wait for the link.
+- `{"op": "link", "state": "up"}`: back. Topics follow with `resumed`.
+- Close code **4401** ("log in again"): the session ended (logout in another tab, idle or
+  maximum age, the NAS no longer accepts it). Go to the login page; do not reconnect.
+- Any other close: reconnect with backoff; the session may still be alive.
+
+The server pings every 30 s; browsers answer on their own.

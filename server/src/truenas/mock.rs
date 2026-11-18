@@ -419,6 +419,8 @@ pub fn fake_nas() -> (
                 Reply::Result(json!(format!("sub-{}", nas.subscriptions)))
             }
             "core.unsubscribe" => Reply::Result(Value::Null),
+            "system.info" => Reply::Result(json!({"hostname": "truenas"})),
+            "alert.list" => Reply::Result(json!([])),
             "fast" => Reply::Result(json!("fast")),
             "slow" => Reply::Delay(
                 Duration::from_millis(300),

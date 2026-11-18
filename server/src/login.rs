@@ -442,6 +442,7 @@ mod tests {
             let state = AppState {
                 sessions: SessionStore::new(store),
                 login: Login::new(Some(ep), SessionOptions::default(), LimitOptions::default()),
+                allowlist: crate::allowlist::Allowlist::default(),
             };
             Self { mock, state }
         }
@@ -730,6 +731,7 @@ mod tests {
         let state = AppState {
             sessions: SessionStore::new(StoreOptions::default()),
             login: Login::new(None, SessionOptions::default(), LimitOptions::default()),
+            allowlist: crate::allowlist::Allowlist::default(),
         };
         let req = Request::post("/api/login")
             .header(header::CONTENT_TYPE, "application/json")

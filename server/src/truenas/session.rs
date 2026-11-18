@@ -550,7 +550,7 @@ fn backoff(opts: &SessionOptions, attempt: u32) -> Duration {
 mod tests {
     use super::super::auth::{LoginStep, login};
     use super::super::events::{Event, Update, UpdateKind};
-    use super::super::mock::{Mock, Nas, Reply, fake_nas, within};
+    use super::super::mock::{Mock, Nas, fake_nas, within};
     use super::*;
 
     fn opts() -> SessionOptions {

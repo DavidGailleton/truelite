@@ -15,13 +15,16 @@ mod rpc;
 mod session;
 mod tls;
 
-pub use auth::{LoginStep, PendingOtp, Secret, UserInfo, login};
-pub use client::{Client, Notification, Options, Scheme, check_url};
+// Only what the rest of the server uses; the other public types stay reachable through the
+// methods that return them.
+pub use auth::{LoginStep, PendingOtp, Secret, login};
+pub use client::{Scheme, check_url};
 pub use error::{AuthFailure, Error};
-pub use events::{Event, Subscription, Update, UpdateKind};
-pub use rpc::{ErrorData, RpcError};
-pub use session::{EndReason, Endpoint, Link, Session, SessionOptions};
-pub use tls::{Fingerprint, FingerprintParseError, client_config};
+pub use events::{Event, Update, UpdateKind};
+#[cfg(test)]
+pub use session::EndReason;
+pub use session::{Endpoint, Link, Session, SessionOptions};
+pub use tls::Fingerprint;
 
 /// Pinned API version. The NAS (25.10.8) serves `v25.10.0` … `v25.10.5`; the vault reference
 /// documents v25.10.5, so the wire format here matches it exactly.

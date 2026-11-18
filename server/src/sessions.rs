@@ -431,10 +431,6 @@ pub fn session_json(session: &truenas::Session) -> serde_json::Value {
 /// A request from a logged-in browser. Rejects with 401 otherwise.
 pub struct Authed {
     pub session: truenas::Session,
-    #[allow(
-        dead_code,
-        reason = "the WebSocket bridge (#16) opens a WsGuard with it"
-    )]
     pub id: SessionId,
 }
 
@@ -465,6 +461,13 @@ where
 #[derive(Debug)]
 pub struct NotLoggedIn {
     stale_cookie: bool,
+}
+
+impl NotLoggedIn {
+    /// The cookie named a session that has just ended: delete it.
+    pub fn stale() -> Self {
+        Self { stale_cookie: true }
+    }
 }
 
 impl IntoResponse for NotLoggedIn {
