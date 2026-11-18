@@ -2,6 +2,12 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.15.2 — 2026-11-18
+
+### Fixes
+
+- **server:** Let the session cookie work over plain http
+
 ## v0.15.1 — 2026-11-18
 
 ### Fixes
