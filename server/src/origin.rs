@@ -82,6 +82,8 @@ pub fn allowed(origin: &str, host: Option<&str>, extra: &[String]) -> bool {
     let Some(authority) = parse(origin) else {
         return false;
     };
+    // `config` stores the list lowercase, but `extra` may come from elsewhere (tests): compare
+    // ignoring case rather than rely on it.
     if extra.iter().any(|e| e.eq_ignore_ascii_case(origin)) {
         return true;
     }
@@ -91,14 +93,17 @@ pub fn allowed(origin: &str, host: Option<&str>, extra: &[String]) -> bool {
 /// The authority of a serialized origin (`http(s)://authority`, nothing after it), or `None`
 /// for anything else (`null`, a path, an empty host).
 pub fn parse(origin: &str) -> Option<&str> {
-    let lower = origin.get(..8).map(str::to_ascii_lowercase);
-    let rest = match lower.as_deref() {
-        Some("https://") => &origin[8..],
-        Some(s) if s.starts_with("http://") => &origin[7..],
-        _ => return None,
-    };
+    let rest =
+        strip_prefix_ci(origin, "https://").or_else(|| strip_prefix_ci(origin, "http://"))?;
     let bad = |c: char| matches!(c, '/' | '?' | '#' | '@' | ' ') || c.is_ascii_control();
     (!rest.is_empty() && !rest.contains(bad)).then_some(rest)
+}
+
+/// `s` without `prefix`, compared ignoring ASCII case; `None` if `s` does not start with it.
+fn strip_prefix_ci<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
+    s.get(..prefix.len())
+        .filter(|head| head.eq_ignore_ascii_case(prefix))
+        .map(|_| &s[prefix.len()..])
 }
 
 #[cfg(test)]

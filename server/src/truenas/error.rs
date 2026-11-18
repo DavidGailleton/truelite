@@ -7,8 +7,13 @@ use super::tls::Fingerprint;
 
 #[derive(Debug)]
 pub enum Error {
-    /// Could not open the WebSocket (DNS, TCP, TLS, HTTP upgrade, bad URL).
-    Connect(String),
+    /// Could not open the WebSocket (DNS, TCP, TLS, HTTP upgrade, bad URL). `what` says what
+    /// failed (the URL, `TLS setup`, a rule the URL breaks); `source` is the underlying error,
+    /// if any.
+    Connect {
+        what: String,
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
     /// The NAS presented a certificate other than the pinned one (`TRUELITE_NAS_FINGERPRINT`).
     CertMismatch { got: Fingerprint },
     /// The connection is closed or dropped before the reply arrived.
@@ -43,7 +48,13 @@ pub enum AuthFailure {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Connect(e) => write!(f, "cannot connect to the NAS: {e}"),
+            Error::Connect { what, source } => {
+                write!(f, "cannot connect to the NAS: {what}")?;
+                match source {
+                    Some(e) => write!(f, ": {e}"),
+                    None => Ok(()),
+                }
+            }
             Error::CertMismatch { got } => write!(
                 f,
                 "the NAS certificate does not match TRUELITE_NAS_FINGERPRINT (got {got}); \
@@ -82,4 +93,35 @@ impl fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl Error {
+    /// [`Error::Connect`] caused by `source`.
+    pub(super) fn connect(
+        what: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Error::Connect {
+            what: what.into(),
+            source: Some(Box::new(source)),
+        }
+    }
+
+    /// [`Error::Connect`] with no underlying error (a bad URL, a timeout).
+    pub(super) fn connect_msg(what: impl Into<String>) -> Self {
+        Error::Connect {
+            what: what.into(),
+            source: None,
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Connect {
+                source: Some(e), ..
+            } => Some(e.as_ref()),
+            Error::Decode(e) => Some(e),
+            _ => None,
+        }
+    }
+}

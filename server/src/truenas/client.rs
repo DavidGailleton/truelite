@@ -74,6 +74,21 @@ pub struct Client {
     inner: Arc<Inner>,
 }
 
+/// Two handles are equal when they share one connection.
+impl PartialEq for Client {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl Eq for Client {}
+
+impl std::fmt::Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Client").finish_non_exhaustive()
+    }
+}
+
 struct Inner {
     tx: mpsc::Sender<Command>,
     next_id: AtomicU64,
@@ -101,17 +116,17 @@ impl Client {
         opts: Options,
     ) -> Result<(Client, mpsc::Receiver<Notification>), Error> {
         let base = base.trim_end_matches('/');
-        check_url(base).map_err(Error::Connect)?;
+        check_url(base).map_err(Error::connect_msg)?;
         let url = format!("{base}{API_PATH}");
         let (ws, _) = tokio::time::timeout(
             opts.connect_timeout,
             connect_async_tls_with_config(url.as_str(), None, true, tls.map(Connector::Rustls)),
         )
         .await
-        .map_err(|_| Error::Connect(format!("{url}: timed out")))?
+        .map_err(|_| Error::connect_msg(format!("{url}: timed out")))?
         .map_err(|e| match mismatch_in(&e) {
             Some(got) => Error::CertMismatch { got },
-            None => Error::Connect(format!("{url}: {e}")),
+            None => Error::connect(url.as_str(), e),
         })?;
         tracing::debug!("connected to {url}");
 
@@ -552,12 +567,12 @@ mod tests {
             .await
             .err()
             .unwrap();
-        assert!(matches!(err, Error::Connect(_)), "{err:?}");
+        assert!(matches!(err, Error::Connect { .. }), "{err:?}");
         let err = Client::connect("https://nas.local", None, opts(1000))
             .await
             .err()
             .unwrap();
-        assert!(matches!(err, Error::Connect(_)), "{err:?}");
+        assert!(matches!(err, Error::Connect { .. }), "{err:?}");
     }
 
     #[tokio::test]
@@ -633,7 +648,7 @@ mod tests {
             .err()
             .unwrap();
         // The fingerprint matches, the handshake signature does not.
-        assert!(matches!(err, Error::Connect(_)), "{err:?}");
+        assert!(matches!(err, Error::Connect { .. }), "{err:?}");
         assert!(mock.calls().is_empty());
     }
 
@@ -644,7 +659,7 @@ mod tests {
             .await
             .err()
             .unwrap();
-        assert!(matches!(err, Error::Connect(_)), "{err:?}");
+        assert!(matches!(err, Error::Connect { .. }), "{err:?}");
     }
 
     #[tokio::test]
@@ -680,7 +695,7 @@ mod tests {
             .await
             .err()
             .unwrap();
-        let Error::Connect(msg) = err else {
+        let Error::Connect { what: msg, .. } = err else {
             panic!("expected Connect, got {err:?}")
         };
         assert!(msg.contains("wss://"), "{msg}");

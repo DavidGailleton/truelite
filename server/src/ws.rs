@@ -127,7 +127,7 @@ impl WireError {
             E::TooManyCalls => "busy",
             E::LoggedOut => "logged_out",
             E::Rpc(_)
-            | E::Connect(_)
+            | E::Connect { .. }
             | E::CertMismatch { .. }
             | E::Protocol(_)
             | E::Decode(_)
@@ -545,34 +545,31 @@ async fn forward(
         return forward_logs(&topic, sub, &out).await;
     }
     while let Some(event) = sub.recv().await {
-        let msg = match event {
-            Event::Update(u) => data(&topic, &u),
-            other => {
-                let (msg, last) = topic_status(&topic, &other);
-                if out.send(msg).await.is_err() || last {
-                    return;
-                }
-                continue;
-            }
+        let (msg, last) = match &event {
+            Event::Update(u) => (data(&topic, u), false),
+            _ => match topic_status(&topic, &event) {
+                Some(status) => status,
+                None => continue,
+            },
         };
-        if out.send(msg).await.is_err() {
+        if out.send(msg).await.is_err() || last {
             return;
         }
     }
 }
 
-/// A non-update event as a status message, and whether it is the last one.
-fn topic_status(topic: &str, event: &Event) -> (String, bool) {
-    match event {
+/// A non-update event as a status message, and whether it is the last one. `None` for an
+/// update, which is data, not a status: the callers send updates themselves.
+fn topic_status(topic: &str, event: &Event) -> Option<(String, bool)> {
+    Some(match event {
         Event::Resumed => (status(topic, Status::Resumed), false),
         Event::Missed(count) => (status(topic, Status::Missed { count: *count }), false),
         Event::Ended(e) => {
             let error = WireError::from_nas(e);
             (status(topic, Status::Ended { error }), true)
         }
-        // Not a status; the callers handle updates themselves.
-        Event::Update(_) => unreachable!("an update is not a status"),
-    }
+        Event::Update(_) => return None,
+    })
 }
 
 /// A container log: lines come one event each, often in bursts (the tail, a chatty app), so
@@ -617,11 +614,10 @@ async fn forward_logs(topic: &str, mut sub: truenas::Subscription, out: &mpsc::S
             }
         }
         // What stopped the batch: a status (sent after the lines, in order), or nothing.
-        if let Some(event) = next {
-            let (msg, last) = topic_status(topic, &event);
-            if out.send(msg).await.is_err() || last {
-                return;
-            }
+        if let Some((msg, last)) = next.and_then(|event| topic_status(topic, &event))
+            && (out.send(msg).await.is_err() || last)
+        {
+            return;
         }
         waiting = sub.recv().await;
     }

@@ -99,7 +99,12 @@ struct State {
 /// Shared limiter. Cheap to clone.
 #[derive(Clone)]
 pub struct RateLimiter {
-    inner: Arc<(LimitOptions, Mutex<State>)>,
+    inner: Arc<Inner>,
+}
+
+struct Inner {
+    opts: LimitOptions,
+    state: Mutex<State>,
 }
 
 impl RateLimiter {
@@ -109,13 +114,19 @@ impl RateLimiter {
             global: Instant::now(),
         };
         Self {
-            inner: Arc::new((opts, Mutex::new(state))),
+            inner: Arc::new(Inner {
+                opts,
+                state: Mutex::new(state),
+            }),
         }
     }
 
     /// Never held across an `.await`; every update is a single write, so poison is ignored.
     fn lock(&self) -> MutexGuard<'_, State> {
-        self.inner.1.lock().unwrap_or_else(PoisonError::into_inner)
+        self.inner
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Counts one login attempt from `ip`.
@@ -133,7 +144,7 @@ impl RateLimiter {
     ///
     /// As [`check`](Self::check).
     pub fn check_at(&self, ip: IpAddr, now: Instant) -> Result<(), RetryAfter> {
-        let opts = &self.inner.0;
+        let opts = &self.inner.opts;
         let key = IpKey::from(ip);
         let mut st = self.lock();
         if !st.clients.contains_key(&key) && st.clients.len() >= opts.max_clients {

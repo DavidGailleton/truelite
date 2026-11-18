@@ -19,7 +19,7 @@ use std::net::SocketAddr;
 
 use axum::extract::{DefaultBodyLimit, FromRef, State};
 use axum::http::{HeaderMap, StatusCode, header};
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::json;
@@ -31,7 +31,7 @@ use crate::login::Login;
 use crate::origin::{Origins, SameOrigin};
 use crate::rate_limit::LimitOptions;
 use crate::sessions::{
-    Authed, LOGOUT_TIMEOUT, SessionStore, StoreOptions, clear_cookie, cookie_value, session_json,
+    Authed, LOGOUT_TIMEOUT, SessionInfo, SessionStore, StoreOptions, clear_cookie, cookie_value,
 };
 use crate::truenas::{Endpoint, SessionOptions};
 
@@ -156,8 +156,8 @@ async fn health() -> Json<serde_json::Value> {
 }
 
 /// Who is logged in, for the web app. 401 when nobody is.
-async fn session_info(Authed { session, .. }: Authed) -> Json<serde_json::Value> {
-    Json(session_json(&session))
+async fn session_info(Authed { session, .. }: Authed) -> Response {
+    Json(SessionInfo::of(&session)).into_response()
 }
 
 /// Ends the session, here and on the NAS, and deletes the cookie. Succeeds without a session.

@@ -46,7 +46,7 @@ impl Endpoint {
         let tls = pin
             .map(client_config)
             .transpose()
-            .map_err(|e| Error::Connect(format!("TLS setup: {e}")))?;
+            .map_err(|e| Error::connect("TLS setup", e))?;
         Ok(Self {
             url: url.into(),
             tls,
@@ -92,10 +92,11 @@ impl Default for SessionOptions {
 }
 
 /// State of the upstream link, for the "reconnecting to NAS" UI. Subscriptions are made again
-/// before the link is `Up` after a reconnect.
+/// before the link is `Up` after a reconnect. `Up` carries the live connection, so the state and
+/// the connection can never disagree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
-    Up,
+    Up(Client),
     Reconnecting { attempt: u32 },
     Ended(EndReason),
 }
@@ -104,7 +105,7 @@ impl Link {
     /// The link state as the web app names it: `up`, `reconnecting` or `ended`.
     pub fn as_str(&self) -> &'static str {
         match self {
-            Link::Up => "up",
+            Link::Up(_) => "up",
             Link::Reconnecting { .. } => "reconnecting",
             Link::Ended(_) => "ended",
         }
@@ -142,7 +143,6 @@ pub struct Session {
 struct Shared {
     user: UserInfo,
     link: watch::Receiver<Link>,
-    client: watch::Receiver<Option<Client>>,
     cmds: mpsc::Sender<Cmd>,
     call_timeout: Duration,
     /// Notifications that are no subscribed event; only tests read them.
@@ -169,8 +169,7 @@ impl Session {
         user: UserInfo,
     ) -> Result<Session, Error> {
         let token = auth::generate_token(&client, ttl_secs(&opts)).await?;
-        let (link_tx, link_rx) = watch::channel(Link::Up);
-        let (client_tx, client_rx) = watch::channel(Some(client.clone()));
+        let (link_tx, link_rx) = watch::channel(Link::Up(client.clone()));
         let (cmd_tx, cmd_rx) = mpsc::channel(8);
         #[cfg(test)]
         let (out_tx, out_rx) = mpsc::channel(opts.client.notification_buffer.max(1));
@@ -183,7 +182,6 @@ impl Session {
             token,
             token_at: Instant::now(),
             link: link_tx,
-            client: client_tx,
             cmds: cmd_rx,
             #[cfg(test)]
             out: out_tx,
@@ -196,7 +194,6 @@ impl Session {
             inner: Arc::new(Shared {
                 user,
                 link: link_rx,
-                client: client_rx,
                 cmds: cmd_tx,
                 call_timeout,
                 #[cfg(test)]
@@ -308,18 +305,16 @@ impl Session {
     /// The current connection, waiting for a reconnect up to the call timeout.
     async fn client(&self) -> Result<Client, Error> {
         let mut link = self.inner.link.clone();
-        let state = tokio::time::timeout(
+        let guard = tokio::time::timeout(
             self.inner.call_timeout,
             link.wait_for(|l| !matches!(l, Link::Reconnecting { .. })),
         )
         .await
         .map_err(|_| Error::Closed)?
-        .map(|l| l.clone())
         .map_err(|_| Error::LoggedOut)?;
-        match state {
-            Link::Up => self.inner.client.borrow().clone().ok_or(Error::Closed),
-            Link::Ended(_) => Err(Error::LoggedOut),
-            Link::Reconnecting { .. } => unreachable!("waited for another state"),
+        match &*guard {
+            Link::Up(client) => Ok(client.clone()),
+            _ => Err(Error::LoggedOut),
         }
     }
 
@@ -353,7 +348,6 @@ struct Supervisor {
     token: Secret,
     token_at: Instant,
     link: watch::Sender<Link>,
-    client: watch::Sender<Option<Client>>,
     cmds: mpsc::Receiver<Cmd>,
     /// Feeds [`Session::take_notifications`].
     #[cfg(test)]
@@ -492,7 +486,8 @@ impl Supervisor {
     /// Reconnects with backoff until it works, the session can no longer be resumed, or the
     /// user logs out meanwhile.
     async fn reconnect(&mut self) -> Option<(Client, mpsc::Receiver<Notification>)> {
-        self.client.send_replace(None);
+        // The link stays `Up` with the dead client until the first attempt below: a call made
+        // meanwhile fails with `Closed`, as one in flight does.
         self.topics.mark_down();
         let mut attempt: u32 = 0;
         loop {
@@ -507,8 +502,7 @@ impl Supervisor {
                 Ok((client, mut notifs)) => {
                     tracing::info!(attempt, "reconnected to the NAS");
                     self.resubscribe(&client, &mut notifs).await;
-                    self.client.send_replace(Some(client.clone()));
-                    self.link.send_replace(Link::Up);
+                    self.link.send_replace(Link::Up(client.clone()));
                     return Some((client, notifs));
                 }
                 Err(Attempt::Fatal(reason)) => {
@@ -629,7 +623,6 @@ impl Supervisor {
     }
 
     fn end(&self, reason: EndReason) {
-        self.client.send_replace(None);
         self.link.send_replace(Link::Ended(reason));
     }
 }
@@ -700,7 +693,7 @@ mod tests {
         within(async {
             loop {
                 rx.changed().await.unwrap();
-                if *rx.borrow_and_update() == Link::Up {
+                if matches!(*rx.borrow_and_update(), Link::Up(_)) {
                     break;
                 }
             }
@@ -729,7 +722,7 @@ mod tests {
             methods_on(&mock, 1),
             ["auth.login_ex", "auth.generate_token", "fast"]
         );
-        assert_eq!(*s.link().borrow(), Link::Up);
+        assert!(matches!(*s.link().borrow(), Link::Up(_)));
     }
 
     #[tokio::test]
@@ -818,7 +811,7 @@ mod tests {
         })
         .await;
         mock.set_down(false);
-        wait_link(&s, |l| *l == Link::Up).await;
+        wait_link(&s, |l| matches!(l, Link::Up(_))).await;
         let t = mock.refused();
         let gaps: Vec<_> = t.windows(2).map(|w| w[1] - w[0]).collect();
         // 20, 40, 80, 160 ms ± 20 %: each gap clearly longer than the one before.

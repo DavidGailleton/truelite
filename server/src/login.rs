@@ -25,7 +25,7 @@ use serde_json::json;
 use crate::origin::SameOrigin;
 use crate::rate_limit::{LimitOptions, RateLimiter, RetryAfter};
 use crate::sessions::{
-    Key, LOGOUT_TIMEOUT, SessionId, SessionStore, cookie, named_cookie, session_json, set_cookie,
+    Key, LOGOUT_TIMEOUT, SessionId, SessionInfo, SessionStore, cookie, named_cookie, set_cookie,
     spawn_every,
 };
 use crate::truenas::{self, AuthFailure, Endpoint, LoginStep, PendingOtp, Secret, SessionOptions};
@@ -406,14 +406,15 @@ async fn admit(session: truenas::Session, sessions: &SessionStore) -> Result<Res
         let _ = tokio::time::timeout(LOGOUT_TIMEOUT, session.logout()).await;
         return Err(LoginError::NoWebUi);
     }
-    let body = session_json(&session);
+    // Serialized now: `insert` takes the session.
+    let body = Json(SessionInfo::of(&session)).into_response();
     let id = sessions.insert(session).map_err(|_| LoginError::Full)?;
     Ok((
         [(
             header::SET_COOKIE,
             set_cookie(&id, sessions.options().max_age),
         )],
-        Json(body),
+        body,
     )
         .into_response())
 }

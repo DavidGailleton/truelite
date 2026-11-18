@@ -20,6 +20,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use ring::digest;
 use ring::rand::{SecureRandom, SystemRandom};
+use serde::Serialize;
 use serde_json::json;
 use tokio::task::{JoinHandle, JoinSet};
 
@@ -425,16 +426,27 @@ pub fn named_cookie<'h>(headers: &'h HeaderMap, name: &str) -> Option<&'h str> {
         })
 }
 
-/// What the web app learns about a session (`GET /api/session` and a successful login).
-pub fn session_json(session: &truenas::Session) -> serde_json::Value {
-    let user = session.user();
-    let link = session.link().borrow().as_str();
-    json!({
-        "username": user.username,
-        "roles": user.roles,
-        "two_factor": user.two_factor,
-        "link": link,
-    })
+/// What the web app learns about a session (`GET /api/session` and a successful login),
+/// borrowed from the session.
+#[derive(Debug, Serialize)]
+pub struct SessionInfo<'a> {
+    username: &'a str,
+    roles: &'a [String],
+    two_factor: bool,
+    /// [`Link::as_str`].
+    link: &'static str,
+}
+
+impl<'a> SessionInfo<'a> {
+    pub fn of(session: &'a truenas::Session) -> Self {
+        let user = session.user();
+        Self {
+            username: &user.username,
+            roles: &user.roles,
+            two_factor: user.two_factor,
+            link: session.link().borrow().as_str(),
+        }
+    }
 }
 
 /// A request from a logged-in browser. Rejects with 401 otherwise.
