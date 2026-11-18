@@ -44,6 +44,16 @@ export class NasError extends Error {
 	}
 }
 
+/**
+ * A failed call as an error worth showing, or `null` for one from a dropped link: the topic's
+ * next `resumed` queries again.
+ */
+export function shownError(e: unknown): ErrorBody | null {
+	if (!(e instanceof NasError)) return { code: 'bad_request', message: 'Something went wrong.' };
+	if (['disconnected', 'reconnecting', 'logged_out'].includes(e.code)) return null;
+	return { code: e.code, message: e.message, errname: e.errname };
+}
+
 export interface EventData {
 	kind: 'added' | 'changed' | 'removed' | 'other';
 	id?: unknown;

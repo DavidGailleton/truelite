@@ -16,7 +16,7 @@ import {
 	type Pool,
 	type RootUsage
 } from './pools';
-import { NasError, needsRefetch, type ErrorBody, type TopicMessage } from './ws';
+import { NasError, needsRefetch, shownError, type ErrorBody, type TopicMessage } from './ws';
 
 /** Re-read usable space on a pool change at most this often. */
 const USAGE_DEBOUNCE_MS = 1_000;
@@ -39,13 +39,6 @@ let usageRequest = 0;
 let usageAt = 0;
 let usageTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** An error worth showing: not one from a dropped link (the next `resumed` queries again). */
-function keep(e: unknown): ErrorBody | null {
-	if (!(e instanceof NasError)) return { code: 'bad_request', message: 'Something went wrong.' };
-	if (['disconnected', 'reconnecting', 'logged_out'].includes(e.code)) return null;
-	return { code: e.code, message: e.message, errname: e.errname };
-}
-
 /** Queries the pool list, then their usable space. */
 export function loadPools(): void {
 	const mine = ++listRequest;
@@ -64,7 +57,7 @@ export function loadPools(): void {
 		})
 		.catch((e: unknown) => {
 			if (mine !== listRequest) return;
-			const error = keep(e);
+			const error = shownError(e);
 			if (error) pools.error = error;
 		});
 }
