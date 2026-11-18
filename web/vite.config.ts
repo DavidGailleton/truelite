@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
@@ -16,6 +17,10 @@ export default defineConfig({
 			adapter: adapter({ fallback: 'index.html' })
 		})
 	],
+	test: {
+		include: ['src/**/*.test.ts'],
+		environment: 'node'
+	},
 	server: {
 		proxy: {
 			'/api': backend,

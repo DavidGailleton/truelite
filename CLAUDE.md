@@ -34,12 +34,12 @@ cd server && cargo run                         # config from env, see .env.examp
 Checks (exactly what CI runs, `.github/workflows/ci.yml`):
 
 ```sh
-cd web && npm ci && npm run check && npm run build
+cd web && npm ci && npm run check && npm test && npm run build
 cd server && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 cargo test health_ok                           # single test by name (from server/)
 ```
 
-There is no JS test runner yet; the plan adds vitest. Release image: `docker build .`
+Web unit tests use vitest (`src/**/*.test.ts`, `npm test`; `npx vitest run ws` for one file). Release image: `docker build .`
 (multi-stage: node build → musl static binary → `scratch`, ~5 MB). Every push to `main` releases a version and publishes
 `ghcr.io/davidgailleton/truelite` (`X.Y.Z`, `X.Y`, `latest`, `sha-*`), see below.
 

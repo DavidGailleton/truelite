@@ -36,7 +36,7 @@ shell page and survive an upstream reconnect.
 - [ ] #19 Design tokens and app shell (icon rail / bottom tabs)
 - [ ] #20 Login page
 - [ ] #21 Browser WS client with reconnecting state
-- [ ] #22 Add vitest to the web app and CI
+- [x] #22 Add vitest to the web app and CI
 
 ## Phase 3 — Dashboard (read-only)
 
