@@ -6,6 +6,7 @@
 	// the same dialog as on the app page; on phones they sit on a second line.
 	import { replaceState } from '$app/navigation';
 	import { canChangeApps } from '#lib/app-actions.js';
+	import { actionRun } from '#lib/app-actions.svelte.js';
 	import { page } from '$app/state';
 	import { apps, useApps } from '#lib/apps.svelte.js';
 	import {
@@ -150,9 +151,11 @@
 										<StatusPill {...state} />
 									</div>
 								</a>
-								<div class="row-actions">
-									<AppActions {app} {canAct} compact />
-								</div>
+								{#if canAct}
+									<div class={['row-actions', { failed: actionRun(app.id)?.error }]}>
+										<AppActions {app} {canAct} compact />
+									</div>
+								{/if}
 							</li>
 						{/each}
 					</ul>
@@ -278,26 +281,48 @@
 		color: inherit;
 		text-decoration: none;
 	}
-	.row:hover {
+	/* The whole row, actions included. */
+	.rows li:not(.placeholder):hover {
 		background: var(--container-hover);
 	}
 	.row:focus-visible {
 		outline-offset: -2px;
 	}
-	/* Desktop: the icons end the row. Phone: a second line, under the name, aligned right. */
+	/*
+	 * Wide screens: the icons end the row in a column wide enough for three of them (the icon
+	 * size of AppActions), so the state pills line up whatever the number of icons. Phones, and
+	 * an error anywhere: a line of its own under the name, aligned right.
+	 */
+	.rows {
+		--icon: 2.25rem;
+	}
+	@media (pointer: coarse) {
+		.rows {
+			--icon: var(--touch);
+		}
+	}
 	.row-actions {
 		display: flex;
+		flex: none;
 		justify-content: flex-end;
+		width: calc(3 * var(--icon) + 2 * var(--space-1) + var(--space-5));
 		padding: var(--space-1) var(--space-5) var(--space-1) 0;
 	}
-	.row-actions:not(:has(*)) {
-		display: none;
+	.row-actions.failed {
+		flex-basis: 100%;
+		width: auto;
+		margin-top: calc(-1 * var(--space-2));
+		padding: 0 var(--space-5) var(--space-2) calc(var(--space-5) + 2rem + var(--space-3));
 	}
 	@media (max-width: 639px) {
 		.row-actions {
 			flex-basis: 100%;
+			width: auto;
 			margin-top: calc(-1 * var(--space-2));
 			padding: 0 var(--space-5) var(--space-2) calc(var(--space-5) + 2rem + var(--space-3));
+		}
+		.row-actions:not(:has(*)) {
+			display: none;
 		}
 	}
 	.avatar {
