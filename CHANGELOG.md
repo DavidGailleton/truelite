@@ -2,6 +2,13 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.3.0 — 2026-11-18
+
+### Features
+
+- **server:** Log in with auth.login_ex and reconnect with a token
+- **server:** Event subscriptions via core.subscribe
+
 ## v0.2.0 — 2026-11-18
 
 ### Features
