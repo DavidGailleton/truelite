@@ -166,18 +166,25 @@ struct JobUpdate<'a> {
     progress: &'a truenas::jobs::JobProgress,
 }
 
-/// A change in a subscribed collection.
+/// A change in a subscribed collection. `fields` is an update's own [`Value`], or a
+/// [`LogBatch`].
 #[derive(Serialize)]
-struct TopicData<'a> {
+struct TopicData<'a, F> {
     topic: &'a str,
-    data: UpdateData<'a>,
+    data: UpdateData<'a, F>,
 }
 
 #[derive(Serialize)]
-struct UpdateData<'a> {
+struct UpdateData<'a, F> {
     kind: &'static str,
     id: &'a Option<Value>,
-    fields: &'a Value,
+    fields: &'a F,
+}
+
+/// The `fields` of a log topic's `data` message: every line already waiting.
+#[derive(Serialize)]
+struct LogBatch<'a> {
+    lines: &'a [truenas::apps::LogLine],
 }
 
 /// Everything else a topic tells the browser.
@@ -220,19 +227,6 @@ fn status(topic: &str, status: Status) -> String {
     encode(&TopicStatus { topic, status })
 }
 
-/// The function that cuts a topic's events down to what the web app shows, for the large ones
-/// (documented in `docs/ws-protocol.md`, "Reshaped topics"). It returns `None` for a payload of
-/// another shape, which is then skipped.
-fn reshaper(topic: &str) -> Option<fn(&Value) -> Option<Value>> {
-    match topic {
-        truenas::realtime::EVENT => Some(truenas::realtime::compact),
-        truenas::pools::EVENT => Some(truenas::pools::compact),
-        truenas::apps::EVENT => Some(truenas::apps::compact),
-        truenas::alerts::EVENT => Some(truenas::alerts::compact),
-        _ => None,
-    }
-}
-
 /// Call results the bridge trims before the browser sees them: methods without `select` whose
 /// answer carries much the web app never shows.
 fn result_reshaper(method: &str) -> Option<fn(Value) -> Value> {
@@ -242,8 +236,8 @@ fn result_reshaper(method: &str) -> Option<fn(Value) -> Value> {
     }
 }
 
-/// `fields` is the update's own, or its reshaped form (see [`reshaper`]).
-fn data(topic: &str, u: &Update, fields: &Value) -> String {
+/// An update as a `data` message. Reshaped topics come already cut down by the session.
+fn data(topic: &str, u: &Update) -> String {
     let kind = match u.kind {
         UpdateKind::Added => "added",
         UpdateKind::Changed => "changed",
@@ -255,7 +249,7 @@ fn data(topic: &str, u: &Update, fields: &Value) -> String {
         data: UpdateData {
             kind,
             id: &u.id,
-            fields,
+            fields: &u.fields,
         },
     })
 }
@@ -557,26 +551,9 @@ async fn forward(
     if stream == Stream::Log {
         return forward_logs(&topic, sub, &out).await;
     }
-    // A collection event has no arguments: its upstream name is the event's.
-    let reshape = reshaper(&upstream);
-    let mut warned = false;
     while let Some(event) = sub.recv().await {
         let msg = match event {
-            Event::Update(u) => match reshape {
-                // A removal carries only the id: nothing to reshape.
-                Some(compact) if !u.fields.is_null() => match compact(&u.fields) {
-                    Some(fields) => data(&topic, &u, &fields),
-                    None => {
-                        // Once per subscription: the NAS could repeat it every 2 s.
-                        if !warned {
-                            tracing::warn!(%topic, "payload of an unexpected shape, not forwarded");
-                            warned = true;
-                        }
-                        continue;
-                    }
-                },
-                _ => data(&topic, &u, &u.fields),
-            },
+            Event::Update(u) => data(&topic, &u),
             other => {
                 let (msg, last) = topic_status(&topic, &other);
                 if out.send(msg).await.is_err() || last {
@@ -618,7 +595,7 @@ async fn forward_logs(topic: &str, mut sub: truenas::Subscription, out: &mpsc::S
         while let Some(Event::Update(u)) = &next {
             match truenas::apps::compact_log_line(&u.fields) {
                 Some(line) => {
-                    bytes += line["text"].as_str().map_or(0, str::len);
+                    bytes += line.text.len();
                     lines.push(line);
                 }
                 None if !warned => {
@@ -634,13 +611,12 @@ async fn forward_logs(topic: &str, mut sub: truenas::Subscription, out: &mpsc::S
             };
         }
         if !lines.is_empty() {
-            let fields = serde_json::json!({ "lines": lines });
             let msg = encode(&TopicData {
                 topic,
                 data: UpdateData {
                     kind: "added",
                     id: &None,
-                    fields: &fields,
+                    fields: &LogBatch { lines: &lines },
                 },
             });
             if out.send(msg).await.is_err() {

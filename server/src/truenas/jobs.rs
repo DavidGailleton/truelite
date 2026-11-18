@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use super::error::Error;
-use super::events::{Event, Subscription, TopicOptions, Update, UpdateKind};
+use super::events::{Event, Subscription, TopicOptions};
 use super::session::Session;
 
 /// The job event.
@@ -81,13 +81,10 @@ impl Tracker {
         }
     }
 
-    /// The new progress when `update` is about this call's job and its progress changed.
-    fn update(&mut self, update: &Update) -> Option<JobProgress> {
-        let fields = &update.fields;
-        let event_job = fields
-            .get("id")
-            .or(update.id.as_ref())
-            .and_then(Value::as_i64);
+    /// The new progress when an update (its `id` and `fields`) is about this call's job and its
+    /// progress changed.
+    fn update(&mut self, id: Option<&Value>, fields: &Value) -> Option<JobProgress> {
+        let event_job = fields.get("id").or(id).and_then(Value::as_i64);
         match self.job_id {
             Some(job) if event_job != Some(job) => return None,
             Some(_) => {}
@@ -113,13 +110,9 @@ impl Tracker {
     /// Looks for this call's job in a `core.get_jobs` query result, after its first event may
     /// have been lost. The new progress if it was found and has some.
     fn find_in(&mut self, jobs: &Value) -> Option<JobProgress> {
-        jobs.as_array()?.iter().find_map(|job| {
-            self.update(&Update {
-                kind: UpdateKind::Changed,
-                id: None,
-                fields: job.clone(),
-            })
-        })
+        jobs.as_array()?
+            .iter()
+            .find_map(|job| self.update(None, job))
     }
 }
 
@@ -184,7 +177,7 @@ pub async fn run(
             res = &mut reply => return res,
             event = next_event(&mut sub) => match event {
                 Some(Event::Update(u)) => {
-                    if let Some(p) = tracker.update(&u) {
+                    if let Some(p) = tracker.update(u.id.as_ref(), &u.fields) {
                         pending = Some(p);
                     }
                 }
@@ -220,14 +213,10 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::truenas::UpdateKind;
 
-    fn update(fields: Value) -> Update {
-        Update {
-            kind: UpdateKind::Changed,
-            id: fields.get("id").cloned(),
-            fields,
-        }
+    /// An event about `fields`, with its id where TrueNAS puts it.
+    fn track(t: &mut Tracker, fields: Value) -> Option<JobProgress> {
+        t.update(fields.get("id"), &fields)
     }
 
     fn progress(percent: Option<u8>, description: &str) -> Option<JobProgress> {
@@ -243,19 +232,16 @@ mod tests {
         let mut t = Tracker::new(7);
         // Another call's job.
         let other = json!({"id": 52, "message_ids": [6], "progress": {"percent": 10}});
-        assert_eq!(t.update(&update(other)), None);
+        assert_eq!(track(&mut t, other), None);
         assert_eq!(t.job_id, None);
         // Ours, as TrueNAS sends it: the whole job.
-        assert_eq!(
-            t.update(&update(fixture)),
-            progress(Some(20), "Stopping app")
-        );
+        assert_eq!(track(&mut t, fixture), progress(Some(20), "Stopping app"));
         assert_eq!(t.job_id, Some(53));
         // Later events carry only the id.
         let later = json!({"id": 53, "progress": {"percent": 60.4, "description": "Stopping"}});
-        assert_eq!(t.update(&update(later)), progress(Some(60), "Stopping"));
+        assert_eq!(track(&mut t, later), progress(Some(60), "Stopping"));
         let elsewhere = json!({"id": 54, "message_ids": [7], "progress": {"percent": 90}});
-        assert_eq!(t.update(&update(elsewhere)), None);
+        assert_eq!(track(&mut t, elsewhere), None);
     }
 
     #[test]
@@ -263,7 +249,7 @@ mod tests {
         let mut t = Tracker::new(7);
         let joined = json!({"id": 40, "message_ids": [3, 7], "progress": {"percent": 0,
             "description": "Waiting"}});
-        assert_eq!(t.update(&update(joined)), progress(Some(0), "Waiting"));
+        assert_eq!(track(&mut t, joined), progress(Some(0), "Waiting"));
         assert_eq!(t.job_id, Some(40));
     }
 
@@ -278,7 +264,7 @@ mod tests {
         assert_eq!(t.job_id, Some(53));
         // Then followed by id, as usual.
         let later = json!({"id": 53, "progress": {"percent": 50, "description": "Pulling"}});
-        assert_eq!(t.update(&update(later)), progress(Some(50), "Pulling"));
+        assert_eq!(track(&mut t, later), progress(Some(50), "Pulling"));
 
         let mut none = Tracker::new(9);
         assert_eq!(none.find_in(&jobs), None);
@@ -291,13 +277,10 @@ mod tests {
         let mut t = Tracker::new(1);
         let same = json!({"id": 5, "message_ids": [1], "progress": {"percent": 5,
             "description": "Pulling"}});
-        assert!(t.update(&update(same.clone())).is_some());
-        assert_eq!(t.update(&update(same)), None);
+        assert!(track(&mut t, same.clone()).is_some());
+        assert_eq!(track(&mut t, same), None);
         // An event without progress (a state change) says nothing new.
-        assert_eq!(
-            t.update(&update(json!({"id": 5, "state": "RUNNING"}))),
-            None
-        );
+        assert_eq!(track(&mut t, json!({"id": 5, "state": "RUNNING"})), None);
     }
 
     #[test]

@@ -8,11 +8,13 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
+use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::{broadcast, mpsc};
 
 use super::client::Notification;
 use super::error::Error;
+use super::reshape::reshaper;
 use super::rpc::{ErrorData, RpcError};
 
 /// What changed in a collection event.
@@ -25,7 +27,9 @@ pub enum UpdateKind {
     Other,
 }
 
-/// One `collection_update`. `fields` stays raw: its shape depends on the event.
+/// One `collection_update`. `fields` stays raw (its shape depends on the event), except for the
+/// reshaped topics, where it is already cut down to what the web app shows
+/// ([`reshaper`](super::reshape::reshaper)).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Update {
     pub kind: UpdateKind,
@@ -129,6 +133,10 @@ struct Topic {
     /// The last [`TopicOptions::replay`] updates, for handles that join later.
     history: VecDeque<Arc<Update>>,
     replay: usize,
+    /// Cuts each update's `fields` down once, for every handle ([`reshaper`]).
+    reshape: Option<fn(&Value) -> Option<Value>>,
+    /// An odd payload was already logged: the NAS could repeat it every 2 s.
+    warned: bool,
 }
 
 /// The session's subscriptions, owned by its supervisor task.
@@ -186,6 +194,8 @@ impl Topics {
                 generation,
                 history: VecDeque::with_capacity(opts.replay),
                 replay: opts.replay,
+                reshape: reshaper(&name),
+                warned: false,
             },
         );
         Subscription {
@@ -221,7 +231,26 @@ impl Topics {
                 let Some(topic) = self.map.get_mut(name) else {
                     return Some(n);
                 };
-                let update = Arc::new(parse_update(n.params));
+                let mut update = parse_update(n.params);
+                // A removal carries only the id: nothing to reshape.
+                if let Some(compact) = topic.reshape
+                    && !update.fields.is_null()
+                {
+                    match compact(&update.fields) {
+                        Some(fields) => update.fields = fields,
+                        None => {
+                            if !topic.warned {
+                                tracing::warn!(
+                                    event = %topic.name,
+                                    "payload of an unexpected shape, not forwarded"
+                                );
+                                topic.warned = true;
+                            }
+                            return None;
+                        }
+                    }
+                }
+                let update = Arc::new(update);
                 if topic.replay > 0 {
                     if topic.history.len() == topic.replay {
                         topic.history.pop_front();
@@ -324,7 +353,7 @@ fn parse_update(mut params: Value) -> Update {
 fn parse_unsubscribed(params: &Value) -> Error {
     let data = params
         .get("error")
-        .and_then(|e| serde_json::from_value::<ErrorData>(e.clone()).ok());
+        .and_then(|e| ErrorData::deserialize(e).ok());
     Error::Rpc(Box::new(RpcError {
         code: -32001,
         message: Some("subscription ended by the NAS".into()),
@@ -505,6 +534,44 @@ mod tests {
         let _plain = t.insert("alert.list", Some("sub-3".into()), TopicOptions::default());
         t.dispatch(line("alert.list", 1));
         assert!(t.join("alert.list").unwrap().try_recv().is_none());
+    }
+
+    #[test]
+    fn a_reshaped_topic_is_cut_once_for_broadcast_and_replay() {
+        let (mut t, _rel) = topics();
+        let opts = TopicOptions {
+            buffer: None,
+            replay: 2,
+        };
+        let mut first = t.insert("pool.query", Some("sub-1".into()), opts);
+        let pool = |fields: Value| {
+            note(
+                "collection_update",
+                json!({"msg": "changed", "collection": "pool.query", "id": 1, "fields": fields}),
+            )
+        };
+        assert!(
+            t.dispatch(pool(json!({"name": "tank", "topology": {"data": []}})))
+                .is_none()
+        );
+        // Not an object: skipped, for every handle and in the history.
+        assert!(t.dispatch(pool(json!("odd"))).is_none());
+        let removed = json!({"msg": "removed", "collection": "pool.query", "id": 2});
+        assert!(t.dispatch(note("collection_update", removed)).is_none());
+
+        let mut second = t.join("pool.query").unwrap();
+        for sub in [&mut first, &mut second] {
+            let Some(Event::Update(u)) = sub.try_recv() else {
+                panic!("expected the reshaped update")
+            };
+            assert_eq!(u.fields, json!({"name": "tank"}));
+            let Some(Event::Update(u)) = sub.try_recv() else {
+                panic!("expected the removal")
+            };
+            assert_eq!((u.kind, &u.fields), (UpdateKind::Removed, &Value::Null));
+            assert!(sub.try_recv().is_none());
+        }
+        assert!(t.map["pool.query"].warned);
     }
 
     #[test]

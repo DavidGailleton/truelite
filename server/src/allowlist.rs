@@ -42,7 +42,7 @@ const EVENTS: &[&str] = &[
 /// How the bridge forwards an event to the browser.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stream {
-    /// One `data` message per change, reshaped per event (`ws::reshaper`).
+    /// One `data` message per change; large events come reshaped (`truenas::reshape`).
     Collection,
     /// Container log lines, batched; the tail is replayed to a later subscriber.
     Log,

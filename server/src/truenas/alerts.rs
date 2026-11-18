@@ -8,7 +8,7 @@
 
 use serde_json::Value;
 
-use super::reshape::keep_fields;
+use super::reshape::{keep_fields, keep_fields_owned};
 
 /// The event and method name, as the browser subscribes to or calls it.
 pub const EVENT: &str = "alert.list";
@@ -34,13 +34,13 @@ pub fn compact(fields: &Value) -> Option<Value> {
 
 /// An `alert.list` result with every alert compacted. Entries that are not objects are kept as
 /// they are, so the web app still sees them (and skips them); a result that is not a list is
-/// returned unchanged.
+/// returned unchanged. The kept values are moved, not cloned.
 pub fn compact_list(result: Value) -> Value {
     match result {
         Value::Array(alerts) => Value::Array(
             alerts
                 .into_iter()
-                .map(|a| compact(&a).unwrap_or(a))
+                .map(|a| keep_fields_owned(a, FIELDS).unwrap_or_else(|a| a))
                 .collect(),
         ),
         other => other,

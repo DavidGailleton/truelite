@@ -135,22 +135,29 @@ pub fn log_topic(arg: &str) -> Option<String> {
     ))
 }
 
-/// One log event `{data, timestamp}` as `{time, text}`: the trailing newline dropped, the text
+/// One container log line as the browser receives it, `{time, text}`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LogLine {
+    /// The NAS timestamp, `null` when it sent none.
+    pub time: Option<String>,
+    pub text: String,
+}
+
+/// One log event `{data, timestamp}` as a [`LogLine`]: the trailing newline dropped, the text
 /// cut at [`LOG_LINE_MAX`] bytes. `None` when `data` is not a string.
-pub fn compact_log_line(fields: &Value) -> Option<Value> {
+pub fn compact_log_line(fields: &Value) -> Option<LogLine> {
     let data = fields.get("data")?.as_str()?;
     let data = data.trim_end_matches(['\n', '\r']);
     let text = if data.len() > LOG_LINE_MAX {
-        let mut end = LOG_LINE_MAX;
-        while !data.is_char_boundary(end) {
-            end -= 1;
-        }
-        format!("{}…", &data[..end])
+        format!("{}…", &data[..data.floor_char_boundary(LOG_LINE_MAX)])
     } else {
         data.to_owned()
     };
-    let time = fields.get("timestamp").filter(|t| t.is_string());
-    Some(json!({"time": time.cloned().unwrap_or(Value::Null), "text": text}))
+    let time = fields
+        .get("timestamp")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    Some(LogLine { time, text })
 }
 
 #[cfg(test)]
@@ -258,11 +265,14 @@ mod tests {
             &json!({"data": "hello\r\n", "timestamp": "2026-11-18 10:00:01+00:00"}),
         );
         assert_eq!(
-            line.unwrap(),
+            serde_json::to_value(line.unwrap()).unwrap(),
             json!({"time": "2026-11-18 10:00:01+00:00", "text": "hello"})
         );
         let bare = compact_log_line(&json!({"data": "x", "timestamp": null})).unwrap();
-        assert_eq!(bare, json!({"time": null, "text": "x"}));
+        assert_eq!(
+            serde_json::to_value(bare).unwrap(),
+            json!({"time": null, "text": "x"})
+        );
         assert_eq!(compact_log_line(&json!({"timestamp": "t"})), None);
         assert_eq!(compact_log_line(&json!({"data": 3})), None);
     }
@@ -271,10 +281,7 @@ mod tests {
     fn long_log_lines_are_cut_on_a_char_boundary() {
         // 'é' is 2 bytes: an odd prefix puts the limit inside one.
         let data = format!("x{}", "é".repeat(LOG_LINE_MAX));
-        let text = compact_log_line(&json!({"data": data})).unwrap()["text"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let text = compact_log_line(&json!({"data": data})).unwrap().text;
         assert!(text.ends_with('…'));
         assert!(text.len() <= LOG_LINE_MAX + '…'.len_utf8());
         assert!(text.len() > LOG_LINE_MAX - 2);

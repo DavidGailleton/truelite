@@ -5,7 +5,7 @@
 //! Event schema: <https://api.truenas.com/v25.10/api_events_reporting.realtime.html>
 //! (role `REPORTING_READ`, default interval 2 s).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -21,14 +21,8 @@ const VIRTUAL_PREFIXES: &[&str] = &[
 ];
 
 /// Only the fields read; serde skips the rest, so new TrueNAS fields don't break this. Cores and
-/// interfaces are parsed one by one ([`entries`]): one odd entry is skipped, not the whole sample.
-#[derive(Deserialize)]
-struct Raw {
-    cpu: HashMap<String, Value>,
-    memory: RawMemory,
-    interfaces: HashMap<String, Value>,
-}
-
+/// interfaces are read one by one from the borrowed payload: one odd entry is skipped, not the
+/// whole sample.
 #[derive(Deserialize)]
 struct RawCpu {
     usage: f64,
@@ -89,47 +83,42 @@ struct Iface {
 /// The few numbers the dashboard shows, from one `reporting.realtime` payload; `None` when the
 /// payload does not have the documented shape.
 pub fn compact(fields: &Value) -> Option<Value> {
-    let raw = Raw::deserialize(fields).ok()?;
-    let cpu: HashMap<String, RawCpu> = entries(raw.cpu);
-    let total = cpu.get("cpu")?;
+    let cpu = fields.get("cpu")?.as_object()?;
+    let memory = RawMemory::deserialize(fields.get("memory")?).ok()?;
+    let interfaces = fields.get("interfaces")?.as_object()?;
+    let total = RawCpu::deserialize(cpu.get("cpu")?).ok()?;
     // The aggregate often has no temperature; the hottest core is what matters then.
     let temp = total.temp.or_else(|| {
         cpu.iter()
             .filter(|(name, _)| *name != "cpu")
-            .filter_map(|(_, c)| c.temp)
+            .filter_map(|(_, c)| RawCpu::deserialize(c).ok()?.temp)
             .max_by(f64::total_cmp)
     });
-    let net = entries::<RawIface>(raw.interfaces)
-        .into_iter()
+    let net = interfaces
+        .iter()
         .filter(|(name, _)| !VIRTUAL_PREFIXES.iter().any(|p| name.starts_with(p)))
-        .map(|(name, i)| {
+        .filter_map(|(name, v)| {
+            let i = RawIface::deserialize(v).ok()?;
             let iface = Iface {
                 rx: rate(i.received_bytes_rate.unwrap_or(0.0)),
                 tx: rate(i.sent_bytes_rate.unwrap_or(0.0)),
                 up: i.link_state.as_deref() == Some("LINK_STATE_UP"),
                 speed: i.speed.filter(|s| *s > 0.0).map(rate),
             };
-            (name, iface)
+            Some((name.clone(), iface))
         })
         .collect();
     let out = Compact {
         cpu: (total.usage.clamp(0.0, 100.0) * 10.0).round() / 10.0,
         temp: temp.map(|t| (t * 10.0).round() / 10.0),
         mem: Memory {
-            total: raw.memory.physical_memory_total,
-            available: raw.memory.physical_memory_available,
-            arc: raw.memory.arc_size,
+            total: memory.physical_memory_total,
+            available: memory.physical_memory_available,
+            arc: memory.arc_size,
         },
         net,
     };
     serde_json::to_value(out).ok()
-}
-
-/// The entries of `map` that have the expected shape; the others are left out.
-fn entries<T: for<'de> Deserialize<'de>>(map: HashMap<String, Value>) -> HashMap<String, T> {
-    map.into_iter()
-        .filter_map(|(name, v)| Some((name, T::deserialize(v).ok()?)))
-        .collect()
 }
 
 /// A non-negative rate rounded to a whole number (sub-byte precision is noise on the wire).

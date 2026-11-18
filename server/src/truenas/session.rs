@@ -993,9 +993,10 @@ mod tests {
         mock.push(event("alert.list", 2));
         let u = update(next(&mut sub).await);
         assert_eq!(u.kind, UpdateKind::Added);
+        // `alert.list` is reshaped on arrival: only the alert fields stay, and `n` is not one.
         assert_eq!(
             (u.id.clone(), u.fields.clone()),
-            (Some(json!(2)), json!({"n": 2}))
+            (Some(json!(2)), json!({}))
         );
         // An event nobody subscribed to still reaches the plain notification stream.
         assert_eq!(
