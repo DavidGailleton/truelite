@@ -14,7 +14,8 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			// Single-page app: the Rust server serves index.html for every unknown path.
-			adapter: adapter({ fallback: 'index.html' })
+			// precompress writes .br and .gz next to each file; the server picks one per request.
+			adapter: adapter({ fallback: 'index.html', precompress: true })
 		})
 	],
 	test: {
