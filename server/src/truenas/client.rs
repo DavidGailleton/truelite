@@ -16,6 +16,7 @@ use tokio_tungstenite::{Connector, connect_async_tls_with_config};
 use super::API_PATH;
 use super::error::Error;
 use super::rpc::{Incoming, Request};
+use super::tls::mismatch_in;
 
 type Reply = oneshot::Sender<Result<Value, Error>>;
 
@@ -67,20 +68,22 @@ struct Inner {
 }
 
 impl Client {
-    /// Connects to `base` (`wss://nas.local` or `ws://host:port`) at the pinned [`API_PATH`].
-    /// `tls` is the rustls config for `wss://` (the fingerprint-pinning verifier goes there);
-    /// without it only certificates from an empty root store are accepted, i.e. none.
+    /// Connects to `base` (`wss://nas.local` or `ws://127.0.0.1:port`) at the pinned
+    /// [`API_PATH`]. `tls` is the rustls config for `wss://`, normally
+    /// [`client_config`](super::client_config) with the pinned fingerprint; without it only
+    /// certificates from an empty root store are accepted, i.e. none.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Connect`] for a bad URL (see [`check_url`]) or a network/TLS/upgrade failure,
+    /// [`Error::CertMismatch`] when the NAS certificate is not the pinned one.
     pub async fn connect(
         base: &str,
         tls: Option<Arc<rustls::ClientConfig>>,
         opts: Options,
     ) -> Result<(Client, mpsc::Receiver<Notification>), Error> {
         let base = base.trim_end_matches('/');
-        if !(base.starts_with("ws://") || base.starts_with("wss://")) {
-            return Err(Error::Connect(format!(
-                "NAS URL must start with ws:// or wss://, got {base:?}"
-            )));
-        }
+        check_url(base).map_err(Error::Connect)?;
         let url = format!("{base}{API_PATH}");
         let (ws, _) = tokio::time::timeout(
             opts.connect_timeout,
@@ -88,7 +91,10 @@ impl Client {
         )
         .await
         .map_err(|_| Error::Connect(format!("{url}: timed out")))?
-        .map_err(|e| Error::Connect(format!("{url}: {e}")))?;
+        .map_err(|e| match mismatch_in(&e) {
+            Some(got) => Error::CertMismatch { got },
+            None => Error::Connect(format!("{url}: {e}")),
+        })?;
         tracing::debug!("connected to {url}");
 
         let (cmd_tx, cmd_rx) = mpsc::channel(64);
@@ -193,6 +199,58 @@ impl Client {
     }
 }
 
+/// URL scheme of the NAS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scheme {
+    /// Plain WebSocket, only to a loopback host (tests, local dev).
+    Ws,
+    /// WebSocket over TLS, with a pinned certificate.
+    Wss,
+}
+
+/// Checks a NAS base URL: `ws://` or `wss://`, a host, no credentials, and plain `ws://` only
+/// to a loopback host (the login password would otherwise travel in clear).
+///
+/// # Errors
+///
+/// A message saying what is wrong with `base`.
+pub fn check_url(base: &str) -> Result<Scheme, String> {
+    let (scheme, rest) = if let Some(rest) = base.strip_prefix("wss://") {
+        (Scheme::Wss, rest)
+    } else if let Some(rest) = base.strip_prefix("ws://") {
+        (Scheme::Ws, rest)
+    } else {
+        return Err(format!(
+            "NAS URL must start with wss:// or ws://, got {base:?}"
+        ));
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.contains('@') {
+        return Err("NAS URL must not contain a user name or password".into());
+    }
+    let host = match authority.strip_prefix('[') {
+        // IPv6 literal: `[::1]:8080`.
+        Some(v6) => v6.split(']').next().unwrap_or_default(),
+        None => authority.rsplit_once(':').map_or(authority, |(h, _)| h),
+    };
+    if host.is_empty() {
+        return Err(format!("NAS URL has no host: {base:?}"));
+    }
+    if scheme == Scheme::Ws && !is_loopback(host) {
+        return Err(format!(
+            "plain ws:// is only allowed to localhost, use wss:// for {host}"
+        ));
+    }
+    Ok(scheme)
+}
+
+fn is_loopback(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
 /// The actor: owns the socket and the table of pending calls.
 async fn run<S>(
     ws: tokio_tungstenite::WebSocketStream<S>,
@@ -279,6 +337,7 @@ fn handle(text: &str, pending: &mut HashMap<u64, Reply>, notifs: &mpsc::Sender<N
 #[cfg(test)]
 mod tests {
     use super::super::mock::{Mock, Reply as R};
+    use super::super::{Fingerprint, client_config};
     use super::*;
     use serde_json::json;
 
@@ -446,5 +505,101 @@ mod tests {
             mock.calls()
                 .contains(&(json!(id), "app.upgrade".to_owned()))
         );
+    }
+
+    fn pinned(fp: Fingerprint) -> Option<Arc<rustls::ClientConfig>> {
+        Some(client_config(fp).unwrap())
+    }
+
+    #[tokio::test]
+    async fn pinned_certificate_connects() {
+        let (mock, fp) = Mock::start_tls(standard).await;
+        let (c, _n) = Client::connect(&mock.url, pinned(fp), opts(1000))
+            .await
+            .unwrap();
+        assert_eq!(
+            within(c.call("core.ping", json!([]))).await.unwrap(),
+            "pong"
+        );
+        assert_eq!(mock.path().as_deref(), Some(API_PATH));
+    }
+
+    #[tokio::test]
+    async fn wrong_fingerprint_refuses_connection_with_actual_value() {
+        let (mock, real) = Mock::start_tls(standard).await;
+        let other = Fingerprint::of(b"some other certificate");
+        let err = Client::connect(&mock.url, pinned(other), opts(1000))
+            .await
+            .err()
+            .unwrap();
+        let Error::CertMismatch { got } = err else {
+            panic!("expected CertMismatch, got {err:?}")
+        };
+        assert_eq!(got, real);
+        let msg = err.to_string();
+        assert!(msg.contains("TRUELITE_NAS_FINGERPRINT"), "{msg}");
+        assert!(msg.contains(&real.to_string()), "{msg}");
+        assert!(mock.calls().is_empty());
+    }
+
+    #[tokio::test]
+    async fn pinned_certificate_without_its_private_key_is_refused() {
+        let (mock, fp) = Mock::start_tls_impostor(standard).await;
+        let err = Client::connect(&mock.url, pinned(fp), opts(1000))
+            .await
+            .err()
+            .unwrap();
+        // The fingerprint matches, the handshake signature does not.
+        assert!(matches!(err, Error::Connect(_)), "{err:?}");
+        assert!(mock.calls().is_empty());
+    }
+
+    #[tokio::test]
+    async fn wss_without_pin_is_refused() {
+        let (mock, _) = Mock::start_tls(standard).await;
+        let err = Client::connect(&mock.url, None, opts(1000))
+            .await
+            .err()
+            .unwrap();
+        assert!(matches!(err, Error::Connect(_)), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn host_name_is_not_checked_against_the_pinned_certificate() {
+        let (mock, fp) = Mock::start_tls(standard).await;
+        let port = mock.url.rsplit(':').next().unwrap();
+        // The certificate only names truenas.local: neither address matches it.
+        for base in [mock.url.clone(), format!("wss://localhost:{port}")] {
+            let (c, _n) = Client::connect(&base, pinned(fp), opts(1000))
+                .await
+                .unwrap();
+            assert_eq!(within(c.call("fast", json!([]))).await.unwrap(), "fast");
+        }
+    }
+
+    #[test]
+    fn url_rules() {
+        assert_eq!(check_url("wss://nas.lan"), Ok(Scheme::Wss));
+        assert_eq!(check_url("wss://10.0.0.5:8443/"), Ok(Scheme::Wss));
+        assert_eq!(check_url("ws://127.0.0.1:9000"), Ok(Scheme::Ws));
+        assert_eq!(check_url("ws://localhost"), Ok(Scheme::Ws));
+        assert_eq!(check_url("ws://[::1]:9000"), Ok(Scheme::Ws));
+        assert!(check_url("ws://192.0.2.1").unwrap_err().contains("wss://"));
+        assert!(check_url("ws://nas.lan:80").is_err());
+        assert!(check_url("wss://root:secret@nas.lan").is_err());
+        assert!(check_url("https://nas.lan").is_err());
+        assert!(check_url("wss://").is_err());
+    }
+
+    #[tokio::test]
+    async fn plain_ws_to_a_remote_host_is_refused_before_connecting() {
+        let err = Client::connect("ws://192.0.2.1", None, opts(1000))
+            .await
+            .err()
+            .unwrap();
+        let Error::Connect(msg) = err else {
+            panic!("expected Connect, got {err:?}")
+        };
+        assert!(msg.contains("wss://"), "{msg}");
     }
 }

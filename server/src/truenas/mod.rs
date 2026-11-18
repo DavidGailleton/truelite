@@ -8,10 +8,12 @@ mod error;
 #[cfg(test)]
 mod mock;
 mod rpc;
+mod tls;
 
-pub use client::{Client, Notification, Options};
+pub use client::{Client, Notification, Options, Scheme, check_url};
 pub use error::Error;
 pub use rpc::{ErrorData, RpcError};
+pub use tls::{Fingerprint, FingerprintParseError, client_config};
 
 /// Pinned API version. The NAS (25.10.8) serves `v25.10.0` … `v25.10.5`; the vault reference
 /// documents v25.10.5, so the wire format here matches it exactly.

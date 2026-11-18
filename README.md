@@ -59,6 +59,13 @@ cd ../server && cargo run
 
 Configuration is read from environment variables, see [`.env.example`](.env.example).
 
+truelite talks to the NAS over `wss://` and trusts only the certificate whose SHA-256 fingerprint
+is in `TRUELITE_NAS_FINGERPRINT` (TrueNAS certificates are usually self-signed, so there is no CA
+to check). Get the value with
+`openssl s_client -connect <nas>:443 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256`.
+If you replace the NAS certificate, truelite refuses to connect and logs the new fingerprint:
+check it, then update the variable.
+
 Checks run in CI: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, `npm run check`.
 
 ## Deploy on TrueNAS

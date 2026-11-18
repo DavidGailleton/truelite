@@ -5,11 +5,26 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
+use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+use rustls::server::{ClientHello, ResolvesServerCert};
+use rustls::sign::CertifiedKey;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+
+use super::tls::Fingerprint;
+
+#[derive(Debug)]
+struct OneCert(Arc<CertifiedKey>);
+
+impl ResolvesServerCert for OneCert {
+    fn resolve(&self, _: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
+        Some(self.0.clone())
+    }
+}
 
 /// How the mock answers one call.
 pub enum Reply {
@@ -42,15 +57,84 @@ pub struct Mock {
 }
 
 impl Mock {
+    /// Plain `ws://127.0.0.1:port` mock.
     pub async fn start(handler: impl Fn(&str, &Value) -> Reply + Send + Sync + 'static) -> Mock {
+        Self::listen(Arc::new(handler), None).await
+    }
+
+    /// `wss://127.0.0.1:port` mock with a fresh self-signed certificate; returns its
+    /// fingerprint to pin. Like a real NAS, the certificate's name (`truenas.local`) matches
+    /// none of the addresses the client uses.
+    pub async fn start_tls(
+        handler: impl Fn(&str, &Value) -> Reply + Send + Sync + 'static,
+    ) -> (Mock, Fingerprint) {
+        Self::start_tls_inner(Arc::new(handler), false).await
+    }
+
+    /// Like [`start_tls`](Self::start_tls), but signs the handshake with another key than the
+    /// certificate's: an attacker replaying the NAS's public certificate.
+    pub async fn start_tls_impostor(
+        handler: impl Fn(&str, &Value) -> Reply + Send + Sync + 'static,
+    ) -> (Mock, Fingerprint) {
+        Self::start_tls_inner(Arc::new(handler), true).await
+    }
+
+    async fn start_tls_inner(handler: Handler, wrong_key: bool) -> (Mock, Fingerprint) {
+        let key = rcgen::KeyPair::generate().unwrap();
+        let cert = rcgen::CertificateParams::new(vec!["truenas.local".into()])
+            .unwrap()
+            .self_signed(&key)
+            .unwrap();
+        let fingerprint = Fingerprint::of(cert.der());
+        let signing = if wrong_key {
+            rcgen::KeyPair::generate().unwrap()
+        } else {
+            key
+        };
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let signing_key = provider
+            .key_provider
+            .load_private_key(PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+                signing.serialize_der(),
+            )))
+            .unwrap();
+        // `CertifiedKey::new` does not check that the key matches the certificate, which the
+        // impostor needs; `with_single_cert` would refuse it.
+        let certified = Arc::new(CertifiedKey::new(vec![cert.der().clone()], signing_key));
+        let config = rustls::ServerConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_cert_resolver(Arc::new(OneCert(certified)));
+        let acceptor = TlsAcceptor::from(Arc::new(config));
+        (Self::listen(handler, Some(acceptor)).await, fingerprint)
+    }
+
+    async fn listen(handler: Handler, tls: Option<TlsAcceptor>) -> Mock {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let addr = listener.local_addr().unwrap();
+        let url = match tls {
+            Some(_) => format!("wss://{addr}"),
+            None => format!("ws://{addr}"),
+        };
         let state = Arc::new(Mutex::new(State::default()));
-        let handler: Handler = Arc::new(handler);
         let st = state.clone();
         tokio::spawn(async move {
             while let Ok((tcp, _)) = listener.accept().await {
-                tokio::spawn(serve(tcp, st.clone(), handler.clone()));
+                let (st, handler) = (st.clone(), handler.clone());
+                match tls.clone() {
+                    None => {
+                        tokio::spawn(serve(tcp, st, handler));
+                    }
+                    Some(acceptor) => {
+                        tokio::spawn(async move {
+                            // A client that refuses our certificate aborts the handshake.
+                            if let Ok(stream) = acceptor.accept(tcp).await {
+                                serve(stream, st, handler).await;
+                            }
+                        });
+                    }
+                }
             }
         });
         Mock { url, state }
@@ -79,7 +163,10 @@ impl Mock {
 
 // The handshake callback's error type is tungstenite's, not ours.
 #[allow(clippy::result_large_err)]
-async fn serve(tcp: tokio::net::TcpStream, state: Arc<Mutex<State>>, handler: Handler) {
+async fn serve<S>(tcp: S, state: Arc<Mutex<State>>, handler: Handler)
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
     let st = state.clone();
     let record_path = move |req: &Request, res: Response| {
         st.lock().unwrap().path = Some(req.uri().path().to_owned());

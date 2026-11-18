@@ -28,6 +28,15 @@ async fn main() {
         }
     };
 
+    // Connecting (and so checking the pin) starts with login, #11.
+    match &config.nas {
+        Some(nas) => match nas.fingerprint {
+            Some(pin) => tracing::info!(url = %nas.url, pin = %pin, "NAS configured"),
+            None => tracing::warn!(url = %nas.url, "NAS configured over plain ws:// (dev only)"),
+        },
+        None => tracing::info!("no NAS configured (TRUELITE_NAS_URL)"),
+    }
+
     let app = router();
     let listener = tokio::net::TcpListener::bind(config.listen)
         .await

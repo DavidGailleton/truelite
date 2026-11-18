@@ -24,7 +24,7 @@ the server over our own WS protocol with a method allowlist. Done when a user ca
 shell page and survive an upstream reconnect.
 
 - [x] #9 TrueNAS client: connect, JSON-RPC id matching, API version pin
-- [ ] #10 Pin the NAS TLS certificate fingerprint
+- [x] #10 Pin the NAS TLS certificate fingerprint
 - [ ] #11 Login with auth.login_ex and reconnect with auth.generate_token
 - [ ] #12 Event subscriptions via core.subscribe
 - [ ] #13 Mock TrueNAS JSON-RPC server for tests

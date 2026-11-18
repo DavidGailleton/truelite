@@ -3,11 +3,14 @@
 use std::fmt;
 
 use super::rpc::RpcError;
+use super::tls::Fingerprint;
 
 #[derive(Debug)]
 pub enum Error {
     /// Could not open the WebSocket (DNS, TCP, TLS, HTTP upgrade, bad URL).
     Connect(String),
+    /// The NAS presented a certificate other than the pinned one (`TRUELITE_NAS_FINGERPRINT`).
+    CertMismatch { got: Fingerprint },
     /// The connection is closed or dropped before the reply arrived.
     Closed,
     /// No reply within the call timeout.
@@ -26,6 +29,11 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Connect(e) => write!(f, "cannot connect to the NAS: {e}"),
+            Error::CertMismatch { got } => write!(
+                f,
+                "the NAS certificate does not match TRUELITE_NAS_FINGERPRINT (got {got}); \
+                 if the NAS certificate was replaced on purpose, set the new value"
+            ),
             Error::Closed => f.write_str("connection to the NAS closed"),
             Error::Timeout => f.write_str("the NAS did not answer in time"),
             Error::TooManyCalls => f.write_str("too many concurrent calls to the NAS"),
