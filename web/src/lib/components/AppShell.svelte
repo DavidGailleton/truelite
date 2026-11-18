@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { NAV_ITEMS, isActive } from '#lib/nav.js';
 	import { nas } from '#lib/nas.svelte.js';
-	import { loadSession, logout, session } from '#lib/session.svelte.js';
+	import { logout, session } from '#lib/session.svelte.js';
 	import ConnectionBanner from './ConnectionBanner.svelte';
 	import Icon from './Icon.svelte';
 	import Logo from './Logo.svelte';
@@ -15,10 +15,9 @@
 	let account = $state<HTMLDetailsElement>();
 	let loggingOut = $state(false);
 
-	// Open the connection to truelite and learn who is logged in.
+	// Open the connection to truelite; the layout's load already learnt who is logged in.
 	$effect(() => {
 		nas();
-		loadSession();
 	});
 
 	// A navigation closes the account menu.

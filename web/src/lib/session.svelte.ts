@@ -12,18 +12,43 @@ export interface SessionInfo {
 /** The logged-in user; `null` until loaded, or when nobody is logged in. */
 export const session = $state<{ user: SessionInfo | null }>({ user: null });
 
-let loading: Promise<void> | null = null;
+/** Outcome of {@link loadSession}: logged in, not logged in (401), or the server is unreachable. */
+export type SessionState = 'in' | 'out' | 'unreachable';
 
-/** Loads the session once; later calls share the first request. A failed request can be retried. */
-export function loadSession(): Promise<void> {
+let loading: Promise<SessionState> | null = null;
+
+/**
+ * Loads the session once; later calls share the first request. An unreachable server is not
+ * remembered, so the next call asks again.
+ */
+export function loadSession(): Promise<SessionState> {
 	loading ??= fetch('/api/session', { credentials: 'same-origin', cache: 'no-store' })
-		.then(async (res) => {
-			session.user = res.ok ? ((await res.json()) as SessionInfo) : null;
+		.then(async (res): Promise<SessionState> => {
+			if (res.status === 401) {
+				session.user = null;
+				return 'out';
+			}
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			session.user = (await res.json()) as SessionInfo;
+			return 'in';
 		})
-		.catch(() => {
+		.catch((): SessionState => {
 			loading = null;
+			return 'unreachable';
 		});
 	return loading;
+}
+
+/** Stores the user a login just returned, so the app does not ask the server again. */
+export function setSession(user: SessionInfo): void {
+	session.user = user;
+	loading = Promise.resolve('in');
+}
+
+/** Forgets the session locally (it ended on the server); the next {@link loadSession} asks again. */
+export function clearSession(): void {
+	session.user = null;
+	loading = null;
 }
 
 /**
@@ -37,6 +62,5 @@ export async function logout(): Promise<void> {
 		// Unreachable server: the cookie expires on its own and the session ends server-side.
 	}
 	closeNas();
-	session.user = null;
-	loading = null;
+	clearSession();
 }

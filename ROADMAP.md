@@ -34,7 +34,7 @@ shell page and survive an upstream reconnect.
 - [x] #17 Origin check on WS upgrade and security headers (CSP)
 - [x] #18 Release profile tuning (lto, codegen-units, strip)
 - [x] #19 Design tokens and app shell (icon rail / bottom tabs)
-- [ ] #20 Login page
+- [x] #20 Login page
 - [x] #21 Browser WS client with reconnecting state
 - [x] #22 Add vitest to the web app and CI
 
