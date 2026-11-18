@@ -2,6 +2,29 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.13.0 — 2026-11-18
+
+### Features
+
+- **web:** Shared card states with a stale-data notice
+- **web:** Light/dark theme toggle in the account menu
+- **web:** Sun/moon theme button in the top right
+- **web:** Keep the theme button fixed in the top-right corner
+- **web:** Theme button scrolls with the page on phones
+
+### Fixes
+
+- **server:** Keep live stats when one core or interface is malformed
+- **web:** Reset dashboard data on logout and recover from stale errors
+
+### Refactoring
+
+- **web:** Cards share store summaries, one ago() helper
+
+### Other
+
+- **web:** Theme button without its square background
+
 ## v0.12.0 — 2026-11-18
 
 ### Features
