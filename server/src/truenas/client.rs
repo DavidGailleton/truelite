@@ -471,9 +471,11 @@ mod tests {
 
     #[tokio::test]
     async fn connect_refused() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        drop(listener);
+        // Bound but never listening: the port stays ours (a parallel test's mock cannot take
+        // it, as it could after bind-then-drop) and connecting to it is refused.
+        let reserved = tokio::net::TcpSocket::new_v4().unwrap();
+        reserved.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let addr = reserved.local_addr().unwrap();
         let err = Client::connect(&format!("ws://{addr}"), None, opts(1000))
             .await
             .err()
