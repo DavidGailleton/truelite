@@ -61,7 +61,6 @@
 	--border-secondary: var(--alpha-black-10);
 	--border-subdued: var(--alpha-black-5);
 	--focus-ring: var(--alpha-black-50);
-	--focus-halo: var(--alpha-black-10);
 	--nav-indicator: var(--black);
 
 	/* Primary button: inverse of the page. */
@@ -151,7 +150,6 @@
 		--border-secondary: var(--alpha-white-20);
 		--border-subdued: var(--alpha-white-10);
 		--focus-ring: var(--alpha-white-50);
-		--focus-halo: var(--alpha-white-15);
 		--nav-indicator: var(--white);
 		--button-primary-bg: var(--white);
 		--button-primary-text: var(--black);
@@ -183,7 +181,6 @@
 	--border-secondary: var(--alpha-white-20);
 	--border-subdued: var(--alpha-white-10);
 	--focus-ring: var(--alpha-white-50);
-	--focus-halo: var(--alpha-white-15);
 	--nav-indicator: var(--white);
 	--button-primary-bg: var(--white);
 	--button-primary-text: var(--black);

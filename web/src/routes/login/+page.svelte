@@ -236,10 +236,12 @@
 		background: var(--container);
 		box-shadow: var(--shadow-xs);
 		cursor: text;
-		transition: box-shadow var(--duration-fast);
+		/* The focus recipe of base.css, on the box instead of the borderless input. */
+		outline: 2px solid transparent;
+		outline-offset: 0;
 	}
-	.field:focus-within {
-		box-shadow: 0 0 0 4px var(--focus-halo);
+	.field:has(input:focus-visible) {
+		outline-color: var(--focus-ring);
 	}
 	.field span {
 		color: var(--text-secondary);
