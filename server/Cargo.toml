@@ -22,3 +22,12 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "ring"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 tower = { version = "0.5.3", features = ["util"] }
+
+[profile.release]
+# Size over speed: the server is I/O-bound (a WebSocket bridge), "s" is ~22% smaller than 3.
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+strip = true
+# panic stays "unwind": with "abort", a panic in one browser socket or NAS session task would
+# kill the whole server instead of only that task.

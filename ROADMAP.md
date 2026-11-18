@@ -32,7 +32,7 @@ shell page and survive an upstream reconnect.
 - [x] #15 Login endpoint with rate limit
 - [x] #16 WebSocket bridge with our protocol and method allowlist
 - [x] #17 Origin check on WS upgrade and security headers (CSP)
-- [ ] #18 Release profile tuning (lto, codegen-units, strip)
+- [x] #18 Release profile tuning (lto, codegen-units, strip)
 - [ ] #19 Design tokens and app shell (icon rail / bottom tabs)
 - [ ] #20 Login page
 - [x] #21 Browser WS client with reconnecting state
