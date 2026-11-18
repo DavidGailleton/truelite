@@ -2,6 +2,12 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.4.0 — 2026-11-18
+
+### Features
+
+- **server:** Sessions with a secure cookie, idle timeout and logout
+
 ## v0.3.0 — 2026-11-18
 
 ### Features
