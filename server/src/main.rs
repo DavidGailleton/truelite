@@ -1,18 +1,18 @@
 //! truelite server: serves the web app and (later) bridges it to the TrueNAS API.
 
 mod config;
-// `insert` and `ws_guard` are used by login (#15) and the WebSocket bridge (#16).
-#[allow(dead_code)]
+mod login;
+mod rate_limit;
 mod sessions;
 mod static_files;
-// Wired into login (#11) and the WebSocket bridge (#16); only tests use it for now.
+// Calls and event subscriptions are used by the WebSocket bridge (#16).
 #[allow(dead_code, unused_imports)]
 mod truenas;
 
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use axum::extract::{FromRef, State};
+use axum::extract::{DefaultBodyLimit, FromRef, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
@@ -21,16 +21,29 @@ use serde_json::json;
 use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
-use crate::sessions::{Authed, SessionStore, StoreOptions, clear_cookie, cookie_value};
-use crate::truenas::Link;
+use crate::login::Login;
+use crate::rate_limit::LimitOptions;
+use crate::sessions::{
+    Authed, SessionStore, StoreOptions, clear_cookie, cookie_value, session_json,
+};
+use crate::truenas::{Endpoint, SessionOptions};
 
 /// How long logout waits for the NAS to confirm.
 const LOGOUT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Largest login request body; a user name, a password and some JSON.
+const LOGIN_BODY_LIMIT: usize = 4096;
 
 /// State shared by every handler.
 #[derive(Clone)]
 pub struct AppState {
     pub sessions: SessionStore,
+    pub login: Login,
+}
+
+impl FromRef<AppState> for Login {
+    fn from_ref(state: &AppState) -> Self {
+        state.login.clone()
+    }
 }
 
 impl FromRef<AppState> for SessionStore {
@@ -53,14 +66,28 @@ async fn main() {
         }
     };
 
-    // Connecting (and so checking the pin) starts with login, #11.
-    match &config.nas {
-        Some(nas) => match nas.fingerprint {
-            Some(pin) => tracing::info!(url = %nas.url, pin = %pin, "NAS configured"),
-            None => tracing::warn!(url = %nas.url, "NAS configured over plain ws:// (dev only)"),
-        },
-        None => tracing::info!("no NAS configured (TRUELITE_NAS_URL)"),
-    }
+    // The first connection (and so the first pin check) happens at the first login.
+    let endpoint = match &config.nas {
+        Some(nas) => {
+            match nas.fingerprint {
+                Some(pin) => tracing::info!(url = %nas.url, pin = %pin, "NAS configured"),
+                None => {
+                    tracing::warn!(url = %nas.url, "NAS configured over plain ws:// (dev only)");
+                }
+            }
+            match Endpoint::new(nas.url.clone(), nas.fingerprint) {
+                Ok(ep) => Some(ep),
+                Err(e) => {
+                    tracing::error!("invalid NAS configuration: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        None => {
+            tracing::warn!("no NAS configured (TRUELITE_NAS_URL): logins will fail");
+            None
+        }
+    };
 
     let sessions = SessionStore::new(StoreOptions {
         idle: config.session_idle,
@@ -68,8 +95,11 @@ async fn main() {
         ..StoreOptions::default()
     });
     sessions.spawn_sweeper();
+    let login = Login::new(endpoint, SessionOptions::default(), LimitOptions::default());
+    login.spawn_sweeper(sessions.options().sweep_every);
     let app = router(AppState {
         sessions: sessions.clone(),
+        login,
     });
     let listener = tokio::net::TcpListener::bind(config.listen)
         .await
@@ -88,6 +118,9 @@ async fn main() {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
+        .route("/api/login", post(login::password))
+        .route("/api/login/otp", post(login::otp))
+        .route_layer(DefaultBodyLimit::max(LOGIN_BODY_LIMIT))
         .route("/api/session", get(session_info))
         .route("/api/logout", post(logout))
         .fallback(static_files::serve)
@@ -100,18 +133,7 @@ async fn health() -> Json<serde_json::Value> {
 
 /// Who is logged in, for the web app. 401 when nobody is.
 async fn session_info(Authed { session, .. }: Authed) -> Json<serde_json::Value> {
-    let user = session.user();
-    let link = match *session.link().borrow() {
-        Link::Up => "up",
-        Link::Reconnecting { .. } => "reconnecting",
-        Link::Ended(_) => "ended",
-    };
-    Json(json!({
-        "username": user.username,
-        "roles": user.roles,
-        "two_factor": user.two_factor,
-        "link": link,
-    }))
+    Json(session_json(&session))
 }
 
 /// Ends the session, here and on the NAS, and deletes the cookie. Succeeds without a session.
@@ -152,12 +174,12 @@ mod tests {
     use axum::http::{Request, Response, StatusCode};
     use tower::ServiceExt;
 
-    use crate::truenas::SessionOptions;
     use crate::truenas::mock::logged_in;
 
     fn test_state() -> AppState {
         AppState {
             sessions: SessionStore::new(StoreOptions::default()),
+            login: Login::new(None, SessionOptions::default(), LimitOptions::default()),
         }
     }
 

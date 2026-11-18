@@ -29,7 +29,7 @@ shell page and survive an upstream reconnect.
 - [x] #12 Event subscriptions via core.subscribe
 - [ ] #13 Mock TrueNAS JSON-RPC server for tests
 - [x] #14 Sessions: cookie, idle timeout, logout
-- [ ] #15 Login endpoint with rate limit
+- [x] #15 Login endpoint with rate limit
 - [ ] #16 WebSocket bridge with our protocol and method allowlist
 - [ ] #17 Origin check on WS upgrade and security headers (CSP)
 - [ ] #18 Release profile tuning (lto, codegen-units, strip)

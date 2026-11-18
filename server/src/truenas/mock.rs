@@ -326,7 +326,8 @@ fn answer(reply: Reply, id: Value, out: Out) {
     }
 }
 
-/// A scripted NAS: users `admin`/`secret`, `otp`/`secret` + code `123456`, `old` (expired).
+/// A scripted NAS: users `admin`/`secret`, `otp`/`secret` + code `123456`, `noui`/`secret`
+/// (no web UI access), `old` (expired), `elsewhere` (redirect).
 #[derive(Default)]
 pub struct Nas {
     pub authed: HashSet<usize>,
@@ -338,7 +339,7 @@ pub struct Nas {
 
 fn user_info(name: &str) -> Value {
     json!({"pw_name": name, "pw_uid": 1000, "privilege": {
-        "roles": {"$set": ["READONLY_ADMIN"]}, "webui_access": true}})
+        "roles": {"$set": ["READONLY_ADMIN"]}, "webui_access": name != "noui"}})
 }
 
 fn not_authenticated() -> Reply {
@@ -367,6 +368,7 @@ pub fn fake_nas() -> (
             "auth.login_ex" => match (p["mechanism"].as_str(), p["username"].as_str()) {
                 (Some("PASSWORD_PLAIN"), Some(user)) => match (user, p["password"].as_str()) {
                     ("admin", Some("secret")) => success(&mut nas, "admin", "LEVEL_1"),
+                    ("noui", Some("secret")) => success(&mut nas, "noui", "LEVEL_1"),
                     ("otp", Some("secret")) => {
                         nas.otp_pending.insert(conn);
                         Reply::Result(json!({"response_type": "OTP_REQUIRED", "username": "otp"}))

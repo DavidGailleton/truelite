@@ -36,6 +36,22 @@ const ID_LEN: usize = ID_BYTES * 2;
 pub struct SessionId(String);
 
 impl SessionId {
+    /// A fresh id: 32 bytes from the OS generator, hex-encoded. Also used for one-time-code
+    /// login tickets.
+    pub(crate) fn random(rng: &SystemRandom) -> Self {
+        let mut bytes = [0u8; ID_BYTES];
+        // The OS generator only fails when the system is broken; serving on would be worse.
+        rng.fill(&mut bytes)
+            .expect("the OS random number generator failed");
+        let mut id = String::with_capacity(ID_LEN);
+        for b in bytes {
+            const HEX: &[u8; 16] = b"0123456789abcdef";
+            id.push(char::from(HEX[usize::from(b >> 4)]));
+            id.push(char::from(HEX[usize::from(b & 0x0f)]));
+        }
+        SessionId(id)
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -49,11 +65,11 @@ impl fmt::Debug for SessionId {
 
 /// SHA-256 of a well-formed id: what the store keys entries by.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-struct Key([u8; 32]);
+pub(crate) struct Key([u8; 32]);
 
 impl Key {
     /// `None` unless `id` is exactly [`ID_LEN`] lowercase hex digits.
-    fn of(id: &str) -> Option<Key> {
+    pub(crate) fn of(id: &str) -> Option<Key> {
         let well_formed =
             id.len() == ID_LEN && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
         if !well_formed {
@@ -193,19 +209,7 @@ impl SessionStore {
     }
 
     fn new_id(&self) -> SessionId {
-        let mut bytes = [0u8; ID_BYTES];
-        // The OS generator only fails when the system is broken; serving on would be worse.
-        self.inner
-            .rng
-            .fill(&mut bytes)
-            .expect("the OS random number generator failed");
-        let mut id = String::with_capacity(ID_LEN);
-        for b in bytes {
-            const HEX: &[u8; 16] = b"0123456789abcdef";
-            id.push(char::from(HEX[usize::from(b >> 4)]));
-            id.push(char::from(HEX[usize::from(b & 0x0f)]));
-        }
-        SessionId(id)
+        SessionId::random(&self.inner.rng)
     }
 
     /// Adds a logged-in session and returns its new id.
@@ -392,20 +396,45 @@ pub fn clear_cookie() -> HeaderValue {
 
 /// The session cookie's value, from any of the request's `Cookie` headers.
 pub fn cookie_value(headers: &HeaderMap) -> Option<&str> {
+    named_cookie(headers, COOKIE)
+}
+
+/// The value of the cookie called `name`, from any of the request's `Cookie` headers.
+pub fn named_cookie<'h>(headers: &'h HeaderMap, name: &str) -> Option<&'h str> {
     headers
         .get_all(header::COOKIE)
         .iter()
         .filter_map(|v| v.to_str().ok())
         .flat_map(|v| v.split(';'))
         .find_map(|pair| {
-            let (name, value) = pair.trim().split_once('=')?;
-            (name == COOKIE).then_some(value)
+            let (key, value) = pair.trim().split_once('=')?;
+            (key == name).then_some(value)
         })
+}
+
+/// What the web app learns about a session (`GET /api/session` and a successful login).
+pub fn session_json(session: &truenas::Session) -> serde_json::Value {
+    let user = session.user();
+    let link = match *session.link().borrow() {
+        Link::Up => "up",
+        Link::Reconnecting { .. } => "reconnecting",
+        Link::Ended(_) => "ended",
+    };
+    json!({
+        "username": user.username,
+        "roles": user.roles,
+        "two_factor": user.two_factor,
+        "link": link,
+    })
 }
 
 /// A request from a logged-in browser. Rejects with 401 otherwise.
 pub struct Authed {
     pub session: truenas::Session,
+    #[allow(
+        dead_code,
+        reason = "the WebSocket bridge (#16) opens a WsGuard with it"
+    )]
     pub id: SessionId,
 }
 
