@@ -50,6 +50,8 @@ Web unit tests use vitest (`src/**/*.test.ts`, `npm test`; `npx vitest run ws` f
 Browser (Svelte SPA) ──WS /ws, session cookie──> truelite server (Axum) ──wss /api/v25.10.x JSON-RPC 2.0──> TrueNAS
 ```
 
+- `server/CLAUDE.md` and `web/CLAUDE.md` say which skills to load there (`rust-skills` + `axum`;
+  the Svelte plugin) and what they provide.
 - `server/` (crate `truelite`, edition 2024): `main.rs` builds the router (`router()` is `pub`
   so tests drive it with `tower::ServiceExt::oneshot`), `config.rs` reads `TRUELITE_*` env vars,
   `static_files.rs` serves `web/build` embedded with rust-embed: unknown paths fall back to
