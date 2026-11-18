@@ -2,6 +2,19 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.10.0 — 2026-11-18
+
+### Features
+
+- **web:** Login page with one-time code step
+
+### Fixes
+
+- **server:** Say why a login has to start again
+- **web:** End the code step when the server drops the login, accept codes with spaces
+- **web:** Keep the focus outline on login fields
+- **web:** Reload the session when it changes, keep the hash after logging in again
+
 ## v0.9.0 — 2026-11-18
 
 ### Features
