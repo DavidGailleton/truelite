@@ -11,6 +11,8 @@ Project history, decisions and phase status live in the vault page
 `~/.claude/plans/make-a-full-plan-ticklish-wilkes.md`. Update the vault page when a phase or a
 decision changes.
 
+Never add claude session at the end of a commit
+
 ## Commands
 
 Docker dev env (only Docker needed; Vite hot reload on :5173, Rust server on :8080 rebuilt by
@@ -59,6 +61,7 @@ Browser (Svelte SPA) ──WS /ws, session cookie──> truelite server (Axum) 
   `#[allow_missing = true]` lets `cargo build` succeed without it in dev.
 
 Planned (phases 2+), keep new code consistent with it:
+
 - `server/src/truenas/` is the only place that knows the TrueNAS API: connection, `auth.login_ex`,
   then `auth.generate_token` for reconnects (the password is never stored), id matching, event
   subscriptions (`core.subscribe`), reconnect with backoff, API version pin. TrueNAS 27 switches
@@ -77,6 +80,7 @@ Planned (phases 2+), keep new code consistent with it:
 ## Performance rules
 
 "Light and fast" is the product. Treat these as hard constraints:
+
 - Initial JS < 100 KB gzip, first paint < 1 s on a phone over Tailscale. Check
   `web/build` sizes after adding anything.
 - No CSS framework, no UI kit, no runtime icon package, no date/chart library without asking.
@@ -114,7 +118,7 @@ its code or assets.
 ## Roadmap, commits and versions
 
 - The roadmap is GitHub: one milestone per phase, one issue per task, project board
-  https://github.com/users/DavidGailleton/projects/3, mirrored in `ROADMAP.md` (tick the box when
+  <https://github.com/users/DavidGailleton/projects/3>, mirrored in `ROADMAP.md` (tick the box when
   an issue closes; add new tasks as issues first). Reference the issue in commits (`Closes #12`).
 - **Every push to `main` releases a version.** CI's `release` job (after `check`) bumps from
   conventional commits with git-cliff (`cliff.toml`): `feat`/breaking → minor, anything else →
