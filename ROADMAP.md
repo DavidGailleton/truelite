@@ -35,7 +35,7 @@ shell page and survive an upstream reconnect.
 - [ ] #18 Release profile tuning (lto, codegen-units, strip)
 - [ ] #19 Design tokens and app shell (icon rail / bottom tabs)
 - [ ] #20 Login page
-- [ ] #21 Browser WS client with reconnecting state
+- [x] #21 Browser WS client with reconnecting state
 - [x] #22 Add vitest to the web app and CI
 
 ## Phase 3 — Dashboard (read-only)
