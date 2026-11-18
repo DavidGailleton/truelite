@@ -2,6 +2,13 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.11.0 — 2026-11-18
+
+### Features
+
+- **server:** Allow and reshape reporting.realtime
+- **web:** Live CPU, RAM and network cards with SVG sparklines
+
 ## v0.10.1 — 2026-11-18
 
 ### Fixes
