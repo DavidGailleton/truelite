@@ -107,6 +107,14 @@ its containers, ports and volumes (`active_workloads`), `portals`, the catalog `
 `FIELDS` in `server/src/truenas/apps.rs`). App ids are strings (the app name). A `removed` event
 has only its `id`.
 
+**`alert.list`**: alert changes (needs `ALERT_LIST_READ`). Each alert carries its class
+arguments (`args`) and its e-mail state (`mail`), and the `alert.list` method takes no `select`,
+so the server trims **both the events and the `alert.list` call result** to: `uuid`, `id`,
+`klass`, `level`, `formatted`, `text`, `datetime`, `last_occurrence`, `dismissed`, `one_shot`
+(the list is `FIELDS` in `server/src/truenas/alerts.rs`). The list includes dismissed alerts.
+`formatted` may contain HTML: show it as text, never as markup. A `removed` event has only its
+`id`.
+
 ## Link and session
 
 - `{"op": "link", "state": "reconnecting"}`: the NAS connection dropped; the server is

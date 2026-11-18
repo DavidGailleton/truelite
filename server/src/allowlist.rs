@@ -8,7 +8,7 @@
 const METHODS: &[&str] = &[
     // Shell: host name and version (READONLY_ADMIN).
     "system.info",
-    // Shell: alert badge (ALERT_LIST_READ).
+    // Dashboard: alerts card (ALERT_LIST_READ). Result reshaped by `truenas::alerts`.
     "alert.list",
     // Dashboard: pool health and raw space, with `select` (POOL_READ).
     "pool.query",
@@ -20,7 +20,7 @@ const METHODS: &[&str] = &[
 
 /// Events the web app may subscribe to, by exact name.
 const EVENTS: &[&str] = &[
-    // Shell: live alert badge (ALERT_LIST_READ).
+    // Dashboard: live alerts (ALERT_LIST_READ). Reshaped by `truenas::alerts` (no args, mail).
     "alert.list",
     // Dashboard: live CPU, RAM, network (REPORTING_READ). Reshaped by `truenas::realtime`.
     "reporting.realtime",

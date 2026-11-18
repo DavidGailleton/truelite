@@ -5,6 +5,7 @@
 //!
 //! Reference: <https://api.truenas.com/v25.10/> (JSON-RPC 2.0 over WebSocket).
 
+pub mod alerts;
 pub mod apps;
 mod auth;
 mod client;

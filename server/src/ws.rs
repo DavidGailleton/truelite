@@ -211,6 +211,16 @@ fn reshaper(topic: &str) -> Option<fn(&Value) -> Option<Value>> {
         truenas::realtime::EVENT => Some(truenas::realtime::compact),
         truenas::pools::EVENT => Some(truenas::pools::compact),
         truenas::apps::EVENT => Some(truenas::apps::compact),
+        truenas::alerts::EVENT => Some(truenas::alerts::compact),
+        _ => None,
+    }
+}
+
+/// Call results the bridge trims before the browser sees them: methods without `select` whose
+/// answer carries much the web app never shows.
+fn result_reshaper(method: &str) -> Option<fn(Value) -> Value> {
+    match method {
+        truenas::alerts::EVENT => Some(truenas::alerts::compact_list),
         _ => None,
     }
 }
@@ -385,7 +395,13 @@ impl Bridge {
             async move {
                 // Params are never logged: later phases send passwords and keys in them.
                 let reply = match session.call(&method, params).await {
-                    Ok(result) => Reply::Ok { id, result },
+                    Ok(result) => Reply::Ok {
+                        id,
+                        result: match result_reshaper(&method) {
+                            Some(compact) => compact(result),
+                            None => result,
+                        },
+                    },
                     Err(e) => {
                         tracing::debug!(%method, error = %e, "call failed");
                         Reply::Err {
@@ -649,6 +665,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_alert_list_comes_back_without_args_and_mail() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        let reply = call(&mut ws, 1, "alert.list").await;
+        assert_eq!(
+            reply,
+            json!({"id": 1, "result": [{"uuid": "a1", "level": "WARNING", "formatted": "Disk is hot"}]})
+        );
+    }
+
+    #[tokio::test]
     async fn replies_come_back_as_they_finish_with_their_ids() {
         static METHODS: &[&str] = &["slow", "fast", "never"];
         let h = Harness::with(Allowlist::new(METHODS, &[])).await;
@@ -745,18 +772,18 @@ mod tests {
     async fn sub_forwards_updates_then_unsub_unsubscribes() {
         let h = Harness::new().await;
         let mut ws = h.open().await;
-        send(&mut ws, json!({"op": "sub", "topic": "alert.list"})).await;
+        send(&mut ws, json!({"op": "sub", "topic": "pool.scan"})).await;
         assert_eq!(
             next(&mut ws).await,
-            json!({"topic": "alert.list", "status": "subscribed"})
+            json!({"topic": "pool.scan", "status": "subscribed"})
         );
         // Subscribing twice on one socket changes nothing.
-        send(&mut ws, json!({"op": "sub", "topic": "alert.list"})).await;
+        send(&mut ws, json!({"op": "sub", "topic": "pool.scan"})).await;
         h.mock.push(event("disk.query", 1));
-        h.mock.push(event("alert.list", 2));
+        h.mock.push(event("pool.scan", 2));
         assert_eq!(
             next(&mut ws).await,
-            json!({"topic": "alert.list", "data": {"kind": "added", "id": 2, "fields": {"n": 2}}})
+            json!({"topic": "pool.scan", "data": {"kind": "added", "id": 2, "fields": {"n": 2}}})
         );
         let subscribes = h
             .methods()
@@ -776,7 +803,7 @@ mod tests {
             (&json!("vm.query"), &json!("ended"), &json!("not_allowed"))
         );
 
-        send(&mut ws, json!({"op": "unsub", "topic": "alert.list"})).await;
+        send(&mut ws, json!({"op": "unsub", "topic": "pool.scan"})).await;
         h.until_nas_saw("core.unsubscribe").await;
     }
 
@@ -892,7 +919,7 @@ mod tests {
     async fn closing_the_socket_unsubscribes() {
         let h = Harness::new().await;
         let mut ws = h.open().await;
-        send(&mut ws, json!({"op": "sub", "topic": "alert.list"})).await;
+        send(&mut ws, json!({"op": "sub", "topic": "pool.scan"})).await;
         assert_eq!(next(&mut ws).await["status"], "subscribed");
         ws.close(None).await.unwrap();
         h.until_nas_saw("core.unsubscribe").await;
@@ -903,7 +930,7 @@ mod tests {
     async fn an_upstream_drop_shows_reconnecting_then_resumed() {
         let h = Harness::new().await;
         let mut ws = h.open().await;
-        send(&mut ws, json!({"op": "sub", "topic": "alert.list"})).await;
+        send(&mut ws, json!({"op": "sub", "topic": "pool.scan"})).await;
         assert_eq!(next(&mut ws).await["status"], "subscribed");
 
         h.mock.set_down(true);
@@ -924,7 +951,7 @@ mod tests {
             }
         }
         assert_eq!(call(&mut ws, 1, "system.info").await["id"], 1);
-        h.mock.push(event("alert.list", 3));
+        h.mock.push(event("pool.scan", 3));
         assert_eq!(next(&mut ws).await["data"]["id"], 3);
     }
 

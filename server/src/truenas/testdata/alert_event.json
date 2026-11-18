@@ -1,0 +1,27 @@
+{
+  "uuid": "6b1f7d2e-3c4a-4f5b-9e8d-1a2b3c4d5e6f",
+  "source": "VolumeStatus",
+  "klass": "VolumeStatus",
+  "args": {
+    "volume": "tank",
+    "state": "DEGRADED",
+    "status": "One or more devices has been removed by the administrator. Sufficient replicas exist for the pool to continue functioning in a degraded state.",
+    "devices": ["/dev/disk/by-partuuid/0c3b1a7e-5d2f-4e6a-8b9c-7d6e5f4a3b2c", "/dev/disk/by-partuuid/9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a"]
+  },
+  "node": "A",
+  "key": "[\"tank\"]",
+  "datetime": {"$date": 1763452800000},
+  "last_occurrence": {"$date": 1763460000000},
+  "dismissed": false,
+  "mail": {
+    "cc": [],
+    "interval": "24h",
+    "sent": {"$date": 1763452805000},
+    "status": "sent"
+  },
+  "text": "Pool %(volume)s state is %(state)s: %(status)s%(devices)s",
+  "id": "6b1f7d2e-3c4a-4f5b-9e8d-1a2b3c4d5e6f",
+  "level": "CRITICAL",
+  "formatted": "Pool tank state is DEGRADED: One or more devices has been removed by the administrator. Sufficient replicas exist for the pool to continue functioning in a degraded state.<br>The following devices are not healthy:<ul><li>Disk ST4000VN008-2DR166 ZGY8XXXX is REMOVED</li></ul>",
+  "one_shot": false
+}
