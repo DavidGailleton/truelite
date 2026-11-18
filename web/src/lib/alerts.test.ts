@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-	ago,
 	applyAlertEvent,
 	parseAlert,
 	parseAlerts,
@@ -193,18 +192,5 @@ describe('sortAlerts and summarizeAlerts', () => {
 	it('has no worst tone when nothing is active', () => {
 		expect(summarizeAlerts([alert('a', 'critical', T0, true)]).worst).toBeNull();
 		expect(summarizeAlerts([]).worst).toBeNull();
-	});
-});
-
-describe('ago', () => {
-	it('reads like a person would say it', () => {
-		const at = (s: number) => ago(new Date(T0), T0 + s * 1000);
-		expect(at(-5)).toBe('just now');
-		expect(at(59)).toBe('just now');
-		expect(at(60)).toBe('1 min ago');
-		expect(at(3599)).toBe('59 min ago');
-		expect(at(3600)).toBe('1 h ago');
-		expect(at(86_400)).toBe('1 day ago');
-		expect(at(12 * 86_400)).toBe('12 days ago');
 	});
 });

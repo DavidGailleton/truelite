@@ -1,6 +1,8 @@
 // Live statistics from the `reporting.realtime` topic, in the compact shape the server sends
 // (docs/ws-protocol.md, "Reshaped topics"). Framework-free so it can be unit-tested.
 
+import { isNum, isObj } from './system';
+
 export const REALTIME_TOPIC = 'reporting.realtime';
 
 /** Samples kept for the sparklines: 2 minutes at one sample every 2 s. */
@@ -25,10 +27,6 @@ export interface Sample {
 	mem: { total: number; available: number; arc: number };
 	net: Record<string, NetStats>;
 }
-
-const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-const isObj = (v: unknown): v is Record<string, unknown> =>
-	typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** The sample in `fields`, or `null` when it does not have the documented shape. */
 export function parseSample(fields: unknown): Sample | null {

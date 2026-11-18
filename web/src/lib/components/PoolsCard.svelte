@@ -3,8 +3,8 @@
 	// bar and the scrub/resilver line. The dashboard calls usePools(); this renders the state.
 	import { cardView } from '#lib/card-state.js';
 	import { connection } from '#lib/nas.svelte.js';
-	import { FULL_CRITICAL, FULL_WARNING, poolRows } from '#lib/pools.js';
-	import { pools } from '#lib/pools.svelte.js';
+	import { FULL_CRITICAL, FULL_WARNING } from '#lib/pools.js';
+	import { poolRowsNow, pools } from '#lib/pools.svelte.js';
 	import { formatBytes, formatPercent } from '#lib/realtime.js';
 	import Card from './Card.svelte';
 	import CardBadge from './CardBadge.svelte';
@@ -13,7 +13,7 @@
 	let { onretry }: { onretry: () => void } = $props();
 
 	const list = $derived(pools.list);
-	const rows = $derived(list ? poolRows(list, pools.usage, Date.now()) : []);
+	const rows = $derived(poolRowsNow() ?? []);
 	const view = $derived(
 		cardView({
 			hasData: list !== null,
@@ -33,7 +33,7 @@
 	<CardNotice
 		{view}
 		what="Pools"
-		denied="Your account can't see pools. It needs read-only admin access on the NAS."
+		denied="Your account can't see pools. It needs the Pool read role (POOL_READ) on the NAS."
 		{onretry}
 	/>
 	{#if view.kind === 'empty'}

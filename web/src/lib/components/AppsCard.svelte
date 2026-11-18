@@ -1,8 +1,7 @@
 <script lang="ts">
 	// Apps card: how many apps run, are stopped or have an update, and which ones crashed. The
 	// dashboard calls useApps(); this renders the state.
-	import { summarize } from '#lib/apps.js';
-	import { apps } from '#lib/apps.svelte.js';
+	import { appSummary, apps } from '#lib/apps.svelte.js';
 	import { cardView } from '#lib/card-state.js';
 	import { connection } from '#lib/nas.svelte.js';
 	import Card from './Card.svelte';
@@ -12,7 +11,7 @@
 	let { onretry }: { onretry: () => void } = $props();
 
 	const list = $derived(apps.list);
-	const summary = $derived(list ? summarize(list) : null);
+	const summary = $derived(appSummary());
 	const view = $derived(
 		cardView({
 			hasData: list !== null,
@@ -29,7 +28,7 @@
 	<CardNotice
 		{view}
 		what="Apps"
-		denied="Your account can't see apps. It needs read-only admin access on the NAS."
+		denied="Your account can't see apps. It needs the Apps read role (APPS_READ) on the NAS."
 		{onretry}
 	/>
 	{#if view.kind === 'empty'}

@@ -3,6 +3,7 @@
 // Framework-free so it can be unit-tested: the Svelte binding lives in pools.svelte.ts.
 import { formatPercent } from './realtime';
 import { isNum, isObj, isStr, parseDate } from './system';
+import { ago } from './time';
 import type { EventData } from './ws';
 
 export const POOL_QUERY = 'pool.query';
@@ -282,14 +283,6 @@ function duration(seconds: number): string {
 	const h = Math.round(min / 60);
 	if (h < 48) return `${h} h`;
 	return `${Math.round(h / 24)} days`;
-}
-
-function ago(date: Date, now: number): string {
-	const seconds = (now - date.getTime()) / 1000;
-	if (seconds < 60) return 'just now';
-	if (seconds < 86400) return `${duration(seconds)} ago`;
-	const days = Math.floor(seconds / 86400);
-	return days === 1 ? 'yesterday' : `${days} days ago`;
 }
 
 /** The scrub or resilver line under a pool, or `null` when there is nothing to say. */

@@ -1,11 +1,12 @@
 <script lang="ts">
 	// Alerts card: the NAS's active alerts, loudest and newest first. The dashboard calls
 	// useAlerts(); this renders the state. Messages are plain text, never HTML.
-	import { ago, summarizeAlerts, TONE_LABEL, type Tone } from '#lib/alerts.js';
-	import { alerts } from '#lib/alerts.svelte.js';
+	import { TONE_LABEL, type Tone } from '#lib/alerts.js';
+	import { alertSummary, alerts } from '#lib/alerts.svelte.js';
 	import { badgeLabel, cardView } from '#lib/card-state.js';
 	import type { IconName } from '#lib/icons.js';
 	import { connection, pageVisible } from '#lib/nas.svelte.js';
+	import { ago } from '#lib/time.js';
 	import Card from './Card.svelte';
 	import CardBadge from './CardBadge.svelte';
 	import CardNotice from './CardNotice.svelte';
@@ -23,8 +24,7 @@
 		info: 'info'
 	};
 
-	const list = $derived(alerts.list);
-	const summary = $derived(list ? summarizeAlerts(list) : null);
+	const summary = $derived(alertSummary());
 	const view = $derived(
 		cardView({
 			hasData: summary !== null,
@@ -67,7 +67,7 @@
 	<CardNotice
 		{view}
 		what="Alerts"
-		denied="Your account can't see alerts. It needs read-only admin access on the NAS."
+		denied="Your account can't see alerts. It needs the Alert list read role (ALERT_LIST_READ) on the NAS."
 		{onretry}
 	/>
 	{#if view.kind === 'empty' && summary}
