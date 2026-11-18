@@ -6,12 +6,26 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use rust_embed::Embed;
+use std::sync::LazyLock;
 
 #[derive(Embed)]
 #[folder = "../web/build/"]
 // In dev the web app is served by Vite, so web/build may not exist yet.
 #[allow_missing = true]
 struct Assets;
+
+/// The `Content-Security-Policy` for this build: it lists the hashes of the inline scripts of
+/// the embedded `index.html` (see [`crate::security`]). Computed once.
+pub fn csp() -> &'static str {
+    static CSP: LazyLock<String> = LazyLock::new(|| {
+        let index = Assets::get("index.html");
+        let html = index
+            .as_ref()
+            .and_then(|f| std::str::from_utf8(&f.data).ok());
+        crate::security::csp(html)
+    });
+    &CSP
+}
 
 pub async fn serve(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');

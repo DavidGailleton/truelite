@@ -22,6 +22,7 @@ use ring::rand::SystemRandom;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::origin::SameOrigin;
 use crate::rate_limit::{LimitOptions, RateLimiter, RetryAfter};
 use crate::sessions::{Key, SessionId, SessionStore, named_cookie, session_json, set_cookie};
 use crate::truenas::{self, AuthFailure, Endpoint, LoginStep, PendingOtp, Secret, SessionOptions};
@@ -298,6 +299,7 @@ pub struct OtpForm {
 
 /// Logs in with a user name and password.
 pub async fn password(
+    _: SameOrigin,
     State(login): State<Login>,
     State(sessions): State<SessionStore>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -337,6 +339,7 @@ pub async fn password(
 
 /// Sends the one-time code of a login started with [`password`].
 pub async fn otp(
+    _: SameOrigin,
     State(login): State<Login>,
     State(sessions): State<SessionStore>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -443,6 +446,7 @@ mod tests {
                 sessions: SessionStore::new(store),
                 login: Login::new(Some(ep), SessionOptions::default(), LimitOptions::default()),
                 allowlist: crate::allowlist::Allowlist::default(),
+                origins: crate::origin::Origins::default(),
             };
             Self { mock, state }
         }
@@ -506,7 +510,19 @@ mod tests {
         }
     }
 
+    /// Host the test requests are sent to, and the browser origin of the app.
+    const HOST: &str = "truelite.test";
+
+    /// Sends `req` from `from`, as the app's own page unless it sets `Origin` itself.
     async fn send(router: Router, mut req: Request<Body>, from: &str) -> Reply {
+        let h = req.headers_mut();
+        h.insert(header::HOST, HeaderValue::from_static(HOST));
+        if !h.contains_key(header::ORIGIN) {
+            h.insert(
+                header::ORIGIN,
+                HeaderValue::from_static("http://truelite.test"),
+            );
+        }
         let addr: SocketAddr = from.parse().unwrap();
         req.extensions_mut().insert(ConnectInfo(addr));
         let res = within(router.oneshot(req)).await.unwrap();
@@ -726,12 +742,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn foreign_origins_are_refused_before_the_nas() {
+        let h = Harness::new().await;
+        for (uri, body) in [
+            ("/api/login", r#"{"username":"admin","password":"secret"}"#),
+            ("/api/login/otp", r#"{"code":"123456"}"#),
+        ] {
+            for origin in ["http://evil.example", "null", "http://truelite.test:8081"] {
+                let req = Request::post(uri)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::ORIGIN, origin)
+                    .body(Body::from(body))
+                    .unwrap();
+                let r = send(h.router(), req, CLIENT).await;
+                assert_eq!(r.status, StatusCode::FORBIDDEN, "{uri} from {origin}");
+                assert_eq!(r.cookie(COOKIE), None);
+            }
+        }
+        assert!(h.mock.calls().is_empty());
+        // The rate limit was not spent on them.
+        assert_eq!(h.password("admin", "secret").await.status, StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn nas_and_store_failures() {
         // No NAS configured.
         let state = AppState {
             sessions: SessionStore::new(StoreOptions::default()),
             login: Login::new(None, SessionOptions::default(), LimitOptions::default()),
             allowlist: crate::allowlist::Allowlist::default(),
+            origins: crate::origin::Origins::default(),
         };
         let req = Request::post("/api/login")
             .header(header::CONTENT_TYPE, "application/json")

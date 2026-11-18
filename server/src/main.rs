@@ -3,7 +3,9 @@
 mod allowlist;
 mod config;
 mod login;
+mod origin;
 mod rate_limit;
+mod security;
 mod sessions;
 mod static_files;
 mod truenas;
@@ -23,6 +25,7 @@ use tracing_subscriber::EnvFilter;
 use crate::allowlist::Allowlist;
 use crate::config::Config;
 use crate::login::Login;
+use crate::origin::{Origins, SameOrigin};
 use crate::rate_limit::LimitOptions;
 use crate::sessions::{
     Authed, SessionStore, StoreOptions, clear_cookie, cookie_value, session_json,
@@ -40,6 +43,14 @@ pub struct AppState {
     pub sessions: SessionStore,
     pub login: Login,
     pub allowlist: Allowlist,
+    /// Origins accepted besides the request's own (`TRUELITE_ALLOWED_ORIGINS`).
+    pub origins: Origins,
+}
+
+impl FromRef<AppState> for Origins {
+    fn from_ref(state: &AppState) -> Self {
+        state.origins.clone()
+    }
 }
 
 impl FromRef<AppState> for Allowlist {
@@ -109,6 +120,7 @@ async fn main() {
         sessions: sessions.clone(),
         login,
         allowlist: Allowlist::default(),
+        origins: Origins::new(config.allowed_origins),
     });
     let listener = tokio::net::TcpListener::bind(config.listen)
         .await
@@ -125,7 +137,7 @@ async fn main() {
 }
 
 pub fn router(state: AppState) -> Router {
-    Router::new()
+    let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/login", post(login::password))
         .route("/api/login/otp", post(login::otp))
@@ -134,7 +146,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/logout", post(logout))
         .route("/ws", get(ws::upgrade))
         .fallback(static_files::serve)
-        .with_state(state)
+        .with_state(state);
+    security::apply(app, static_files::csp())
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -147,7 +160,11 @@ async fn session_info(Authed { session, .. }: Authed) -> Json<serde_json::Value>
 }
 
 /// Ends the session, here and on the NAS, and deletes the cookie. Succeeds without a session.
-async fn logout(State(sessions): State<SessionStore>, headers: HeaderMap) -> impl IntoResponse {
+async fn logout(
+    _: SameOrigin,
+    State(sessions): State<SessionStore>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if let Some(session) = cookie_value(&headers).and_then(|id| sessions.remove(id))
         && tokio::time::timeout(LOGOUT_TIMEOUT, session.logout())
             .await
@@ -191,6 +208,7 @@ mod tests {
             sessions: SessionStore::new(StoreOptions::default()),
             login: Login::new(None, SessionOptions::default(), LimitOptions::default()),
             allowlist: Allowlist::default(),
+            origins: Origins::default(),
         }
     }
 
@@ -198,10 +216,13 @@ mod tests {
         router(state.clone()).oneshot(req).await.unwrap()
     }
 
+    /// A request from the app's own page with the session cookie `id`.
     fn with_cookie(method: &str, uri: &str, id: &str) -> Request<Body> {
         Request::builder()
             .method(method)
             .uri(uri)
+            .header(header::HOST, "truelite.test")
+            .header(header::ORIGIN, "http://truelite.test")
             .header(header::COOKIE, format!("{}={id}", sessions::COOKIE))
             .body(Body::empty())
             .unwrap()
@@ -275,6 +296,46 @@ mod tests {
         // Logging out twice, or without a session, is fine.
         let res = send(&state, with_cookie("POST", "/api/logout", id.as_str())).await;
         assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn logout_from_a_foreign_page_is_refused() {
+        let (_mock, _nas, session) = logged_in(SessionOptions::default()).await;
+        let state = test_state();
+        let id = state.sessions.insert(session).unwrap();
+        let mut req = with_cookie("POST", "/api/logout", id.as_str());
+        req.headers_mut().insert(
+            header::ORIGIN,
+            "http://other.truelite.test".parse().unwrap(),
+        );
+        assert_eq!(send(&state, req).await.status(), StatusCode::FORBIDDEN);
+        let res = send(&state, with_cookie("GET", "/api/session", id.as_str())).await;
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    /// Issue #17: every response, page, API, error or not, carries the security headers.
+    #[tokio::test]
+    async fn every_response_has_the_security_headers() {
+        let state = test_state();
+        for uri in [
+            "/",
+            "/apps/x",
+            "/api/health",
+            "/api/nope",
+            "/api/session",
+            "/ws",
+        ] {
+            let res = send(&state, Request::get(uri).body(Body::empty()).unwrap()).await;
+            let h = res.headers();
+            let csp = h[header::CONTENT_SECURITY_POLICY].to_str().unwrap();
+            assert_eq!(csp, static_files::csp(), "{uri}");
+            assert!(csp.starts_with("default-src 'none'; script-src 'self'"));
+            assert!(csp.contains("frame-ancestors 'none'") && !csp.contains("unsafe"));
+            assert_eq!(h[header::X_CONTENT_TYPE_OPTIONS], "nosniff", "{uri}");
+            assert_eq!(h[header::REFERRER_POLICY], "no-referrer", "{uri}");
+            assert_eq!(h[header::X_FRAME_OPTIONS], "DENY", "{uri}");
+            assert_eq!(h["cross-origin-opener-policy"], "same-origin", "{uri}");
+        }
     }
 
     #[tokio::test]

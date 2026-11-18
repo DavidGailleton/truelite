@@ -65,3 +65,8 @@ body {
 	font: 15px/1.5 var(--font-sans);
 	-webkit-font-smoothing: antialiased;
 }
+
+/* The wrapper in app.html; a class, not an inline style, so the CSP needs no 'unsafe-inline'. */
+.app-root {
+	display: contents;
+}

@@ -17,6 +17,9 @@ pub struct Config {
     /// A session ends this long after login whatever happens. `TRUELITE_SESSION_MAX_HOURS`,
     /// default 24.
     pub session_max_age: Duration,
+    /// Origins accepted on `/ws` and the POSTs besides the request's own (`Host`), for a proxy
+    /// that rewrites `Host`. `TRUELITE_ALLOWED_ORIGINS`, comma-separated, lowercase here.
+    pub allowed_origins: Vec<String>,
 }
 
 /// Where the NAS is and which certificate to trust.
@@ -80,13 +83,34 @@ impl Config {
         };
         let session_idle = positive(&get, "TRUELITE_SESSION_IDLE_MINUTES", 30)?;
         let session_max_age = positive(&get, "TRUELITE_SESSION_MAX_HOURS", 24)?;
+        let allowed_origins = match get("TRUELITE_ALLOWED_ORIGINS") {
+            None => Vec::new(),
+            Some(v) => origins(&v)?,
+        };
         Ok(Self {
+            allowed_origins,
             listen,
             nas,
             session_idle: Duration::from_secs(session_idle * 60),
             session_max_age: Duration::from_secs(session_max_age * 3600),
         })
     }
+}
+
+/// A comma-separated list of origins like `https://nas.example.org` (no path, no trailing `/`).
+fn origins(v: &str) -> Result<Vec<String>, String> {
+    v.split(',')
+        .map(str::trim)
+        .filter(|o| !o.is_empty())
+        .map(|o| {
+            crate::origin::parse(o).map(|_| o.to_ascii_lowercase()).ok_or_else(|| {
+                format!(
+                    "TRUELITE_ALLOWED_ORIGINS: {o:?} is not an origin like https://nas.example.org \
+                     (http or https, no path, no trailing /)"
+                )
+            })
+        })
+        .collect()
 }
 
 /// A whole number > 0 (at most ten years in hours, so durations cannot overflow).
@@ -137,6 +161,29 @@ mod tests {
         for bad in ["0", "-1", "1.5", "ten", "87601"] {
             let err = parse(&[("TRUELITE_SESSION_IDLE_MINUTES", bad)]).unwrap_err();
             assert!(err.starts_with("TRUELITE_SESSION_IDLE_MINUTES"), "{err}");
+        }
+    }
+
+    #[test]
+    fn allowed_origins_are_validated() {
+        assert!(parse(&[]).unwrap().allowed_origins.is_empty());
+        let c = parse(&[(
+            "TRUELITE_ALLOWED_ORIGINS",
+            " https://NAS.example.org, http://10.0.0.2:8080 ,",
+        )])
+        .unwrap();
+        assert_eq!(
+            c.allowed_origins,
+            ["https://nas.example.org", "http://10.0.0.2:8080"]
+        );
+        for bad in [
+            "nas.example.org",
+            "https://nas.example.org/",
+            "null",
+            "ftp://x",
+        ] {
+            let err = parse(&[("TRUELITE_ALLOWED_ORIGINS", bad)]).unwrap_err();
+            assert!(err.starts_with("TRUELITE_ALLOWED_ORIGINS"), "{err}");
         }
     }
 

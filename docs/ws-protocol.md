@@ -7,8 +7,11 @@ apply. Every message is one JSON text frame of at most 64 KiB; anything larger c
 
 ## Opening
 
-Open `/ws` with the session cookie (set by `POST /api/login`). There is no cookie or session →
-the upgrade is refused with `401`; go to the login page. The first message is always the link
+Open `/ws` with the session cookie (set by `POST /api/login`), from the app's own page: the
+`Origin` the browser sends must match the address the request goes to (or be listed in
+`TRUELITE_ALLOWED_ORIGINS`), otherwise the upgrade is refused with `403` before the session is
+looked at. There is no cookie or session → the upgrade is refused with `401`; go to the login
+page. The first message is always the link
 state:
 
 ```json

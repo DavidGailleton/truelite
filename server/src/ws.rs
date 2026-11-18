@@ -20,6 +20,7 @@ use tokio::task::{AbortHandle, JoinSet};
 use tracing::Instrument;
 
 use crate::allowlist::Allowlist;
+use crate::origin::SameOrigin;
 use crate::sessions::{Authed, NotLoggedIn, SessionStore, WsGuard};
 use crate::truenas::{self, Event, Link, Update, UpdateKind};
 
@@ -36,14 +37,15 @@ const PING_EVERY: Duration = Duration::from_secs(30);
 /// Close code when the session has ended: the web app goes to the login page.
 pub const CLOSE_LOGGED_OUT: u16 = 4401;
 
-/// `GET /ws`: upgrades a logged-in browser. 401 without a live session.
+/// `GET /ws`: upgrades a logged-in browser. 403 from a foreign page (checked first), 401
+/// without a live session.
 pub async fn upgrade(
+    _: SameOrigin,
     Authed { session, id }: Authed,
     State(sessions): State<SessionStore>,
     State(allow): State<Allowlist>,
     ws: WebSocketUpgrade,
 ) -> Response {
-    // #17: the Origin check goes here, before the socket is accepted.
     let Some(guard) = sessions.ws_guard(id.as_str()) else {
         return NotLoggedIn::stale().into_response();
     };
@@ -493,6 +495,7 @@ mod tests {
                 sessions: SessionStore::new(StoreOptions::default()),
                 login: Login::new(None, SessionOptions::default(), LimitOptions::default()),
                 allowlist,
+                origins: crate::origin::Origins::default(),
             };
             let id = state.sessions.insert(session).unwrap().as_str().to_owned();
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -508,10 +511,23 @@ mod tests {
             }
         }
 
+        /// Opens `/ws` as the app's own page would.
         async fn connect(&self, cookie: Option<&str>) -> Result<Client, tungstenite::Error> {
+            let origin = format!("http://{}", self.addr);
+            self.connect_from(cookie, Some(&origin)).await
+        }
+
+        async fn connect_from(
+            &self,
+            cookie: Option<&str>,
+            origin: Option<&str>,
+        ) -> Result<Client, tungstenite::Error> {
             let mut req = format!("ws://{}/ws", self.addr)
                 .into_client_request()
                 .unwrap();
+            if let Some(o) = origin {
+                req.headers_mut().insert(header::ORIGIN, o.parse().unwrap());
+            }
             if let Some(c) = cookie {
                 let value = format!("{COOKIE}={c}").parse().unwrap();
                 req.headers_mut().insert(header::COOKIE, value);
@@ -565,6 +581,36 @@ mod tests {
     fn event(collection: &str, n: i64) -> Value {
         json!({"jsonrpc": "2.0", "method": "collection_update", "params": {
             "msg": "added", "collection": collection, "id": n, "fields": {"n": n}}})
+    }
+
+    fn http_status(res: Result<Client, tungstenite::Error>) -> u16 {
+        match res {
+            Err(tungstenite::Error::Http(r)) => r.status().as_u16(),
+            other => panic!("expected an HTTP refusal, got {:?}", other.map(|_| ())),
+        }
+    }
+
+    /// Issue #17: another origin (same host, another port; another host; none) cannot open the
+    /// socket, even with the cookie, and is refused before the session is looked at.
+    #[tokio::test]
+    async fn foreign_origins_cannot_open_the_socket() {
+        let h = Harness::new().await;
+        let other_port = format!("http://{}:{}", h.addr.ip(), h.addr.port() + 1);
+        for origin in [
+            Some(other_port.as_str()),
+            Some("http://evil.example"),
+            Some("null"),
+            None,
+        ] {
+            let res = h.connect_from(Some(&h.id), origin).await;
+            assert_eq!(http_status(res), 403, "{origin:?}");
+            // A dead cookie would be 401: the origin is checked first.
+            let res = h.connect_from(Some(&"a".repeat(64)), origin).await;
+            assert_eq!(http_status(res), 403, "{origin:?}");
+        }
+        assert!(h.mock.calls().iter().all(|(_, m)| m != "core.subscribe"));
+        // The real page still gets in.
+        h.open().await;
     }
 
     /// Issue #16 "done when": a method outside the list never reaches the NAS.
@@ -789,6 +835,8 @@ mod tests {
         let h = Harness::new().await;
         let mut ws = h.open().await;
         let logout = HttpRequest::post("/api/logout")
+            .header(header::HOST, "truelite.test")
+            .header(header::ORIGIN, "https://truelite.test")
             .header(header::COOKIE, format!("{COOKIE}={}", h.id))
             .body(Body::empty())
             .unwrap();

@@ -8,6 +8,7 @@
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
-		<div style="display: contents">%sveltekit.body%</div>
+		<!-- No inline style: the CSP allows stylesheets from 'self' only (see tokens.css). -->
+		<div class="app-root">%sveltekit.body%</div>
 	</body>
 </html>
