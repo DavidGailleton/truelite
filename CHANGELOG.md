@@ -2,6 +2,24 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.8.0 — 2026-11-18
+
+### Features
+
+- **web:** WebSocket client with reconnecting state
+
+### Fixes
+
+- **web:** Keep the browser's Host through the dev proxy
+
+### Documentation
+
+- CLAUDE.md commit rule, ignore local agent skills
+
+### CI and build
+
+- **web:** Add vitest and run it in CI
+
 ## v0.7.0 — 2026-11-18
 
 ### Features
