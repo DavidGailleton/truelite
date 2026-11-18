@@ -216,6 +216,18 @@ describe('calls', () => {
 		]);
 	});
 
+	it('of actions are dropped if truelite stays out of reach, never sent late', async () => {
+		const { socket } = connect();
+		last().up();
+		last().serverClose(1006);
+		const p = socket.call('app.stop', ['plex'], { timeout: null }).catch((e) => e);
+		await vi.advanceTimersByTimeAsync(CALL_TIMEOUT_MS);
+		expect(await p).toMatchObject({ code: 'timeout' });
+		await vi.advanceTimersByTimeAsync(30_000);
+		last().up();
+		expect(last().ops('call')).toEqual([]);
+	});
+
 	it('made while offline wait for the next socket', async () => {
 		const { socket } = connect();
 		last().up();

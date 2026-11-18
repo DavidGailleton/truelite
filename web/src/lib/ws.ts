@@ -83,7 +83,11 @@ export interface JobProgress {
 }
 
 export interface CallOptions {
-	/** Milliseconds, or `null` for none (actions: a job can take minutes). */
+	/**
+	 * Milliseconds, or `null` for no limit on the reply (actions: a job can take minutes). With
+	 * `null` the call must still go out within {@link CALL_TIMEOUT_MS}: an action is never sent
+	 * long after the user confirmed it.
+	 */
 	timeout?: number | null;
 	/** Gets the job's progress, for an action. */
 	onProgress?: (progress: JobProgress) => void;
@@ -150,6 +154,8 @@ interface Pending {
 	resolve: (value: unknown) => void;
 	reject: (error: NasError) => void;
 	timer: ReturnType<typeof setTimeout> | undefined;
+	/** The timer only limits the wait to be sent (`timeout: null`): cleared once sent. */
+	untilSent: boolean;
 	onProgress?: (progress: JobProgress) => void;
 	/** Written to a socket: may have run, so it is never sent again. */
 	sent: boolean;
@@ -241,8 +247,8 @@ export class NasSocket {
 
 	/**
 	 * Calls an allowlisted TrueNAS method. Rejects with {@link NasError}. While truelite is out of
-	 * reach the call waits (until its timeout) and is sent once connected. An action gets its job's
-	 * progress through `onProgress`.
+	 * reach the call waits (until its timeout, or {@link CALL_TIMEOUT_MS} for an action) and is
+	 * sent once connected. An action gets its job's progress through `onProgress`.
 	 */
 	call<T = unknown>(
 		method: string,
@@ -254,19 +260,27 @@ export class NasSocket {
 		}
 		const id = this.#takeId();
 		return new Promise<T>((resolve, reject) => {
-			const timer =
-				timeout === null
-					? undefined
-					: setTimeout(() => {
-							this.#pending.delete(id);
-							reject(new NasError({ code: 'timeout', message: 'The NAS did not answer in time.' }));
-						}, timeout);
+			const untilSent = timeout === null;
+			const timer = setTimeout(() => {
+				this.#pending.delete(id);
+				reject(
+					new NasError(
+						untilSent
+							? {
+									code: 'timeout',
+									message: 'truelite could not be reached, so nothing was done.'
+								}
+							: { code: 'timeout', message: 'The NAS did not answer in time.' }
+					)
+				);
+			}, timeout ?? CALL_TIMEOUT_MS);
 			const pending: Pending = {
 				method,
 				params,
 				resolve: resolve as (value: unknown) => void,
 				reject,
 				timer,
+				untilSent,
 				onProgress,
 				sent: false
 			};
@@ -488,6 +502,7 @@ export class NasSocket {
 	#sendCall(id: number, pending: Pending): void {
 		if (pending.sent) return;
 		pending.sent = true;
+		if (pending.untilSent) clearTimeout(pending.timer);
 		this.#send({ op: 'call', id, method: pending.method, params: pending.params });
 	}
 
