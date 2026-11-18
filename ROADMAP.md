@@ -91,6 +91,7 @@ Installable PWA, offline/unreachable states, performance budget enforced, access
 - [ ] #47 Enforce the performance budget in CI
 - [ ] #48 Accessibility pass
 - [ ] #49 Lighthouse on a phone over Tailscale
+- [x] #55 Server review: compression, fewer clones, dedup, idiomatic fixes
 
 ## Phase 8 — Deploy & v1.0
 
