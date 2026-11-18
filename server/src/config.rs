@@ -1,6 +1,7 @@
 //! Configuration from environment variables (see `.env.example`).
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use crate::truenas::{Fingerprint, Scheme, check_url};
 
@@ -10,6 +11,12 @@ pub struct Config {
     pub listen: SocketAddr,
     /// The NAS to talk to; `None` until `TRUELITE_NAS_URL` is set.
     pub nas: Option<NasConfig>,
+    /// A session with no request and no open WebSocket for this long ends.
+    /// `TRUELITE_SESSION_IDLE_MINUTES`, default 30.
+    pub session_idle: Duration,
+    /// A session ends this long after login whatever happens. `TRUELITE_SESSION_MAX_HOURS`,
+    /// default 24.
+    pub session_max_age: Duration,
 }
 
 /// Where the NAS is and which certificate to trust.
@@ -71,7 +78,27 @@ impl Config {
                 Some(NasConfig { url, fingerprint })
             }
         };
-        Ok(Self { listen, nas })
+        let session_idle = positive(&get, "TRUELITE_SESSION_IDLE_MINUTES", 30)?;
+        let session_max_age = positive(&get, "TRUELITE_SESSION_MAX_HOURS", 24)?;
+        Ok(Self {
+            listen,
+            nas,
+            session_idle: Duration::from_secs(session_idle * 60),
+            session_max_age: Duration::from_secs(session_max_age * 3600),
+        })
+    }
+}
+
+/// A whole number > 0 (at most ten years in hours, so durations cannot overflow).
+fn positive(get: impl Fn(&str) -> Option<String>, var: &str, default: u64) -> Result<u64, String> {
+    match get(var) {
+        None => Ok(default),
+        Some(v) => match v.trim().parse::<u64>() {
+            Ok(n) if (1..=87_600).contains(&n) => Ok(n),
+            _ => Err(format!(
+                "{var}: expected a whole number from 1 to 87600, got {v:?}"
+            )),
+        },
     }
 }
 
@@ -94,6 +121,23 @@ mod tests {
         let c = parse(&[]).unwrap();
         assert!(c.nas.is_none());
         assert_eq!(c.listen.port(), 8080);
+        assert_eq!(c.session_idle, Duration::from_secs(30 * 60));
+        assert_eq!(c.session_max_age, Duration::from_secs(24 * 3600));
+    }
+
+    #[test]
+    fn session_lifetimes_are_whole_positive_numbers() {
+        let c = parse(&[
+            ("TRUELITE_SESSION_IDLE_MINUTES", "5"),
+            ("TRUELITE_SESSION_MAX_HOURS", " 2 "),
+        ])
+        .unwrap();
+        assert_eq!(c.session_idle, Duration::from_secs(300));
+        assert_eq!(c.session_max_age, Duration::from_secs(7200));
+        for bad in ["0", "-1", "1.5", "ten", "87601"] {
+            let err = parse(&[("TRUELITE_SESSION_IDLE_MINUTES", bad)]).unwrap_err();
+            assert!(err.starts_with("TRUELITE_SESSION_IDLE_MINUTES"), "{err}");
+        }
     }
 
     #[test]

@@ -10,7 +10,7 @@ mod client;
 mod error;
 mod events;
 #[cfg(test)]
-mod mock;
+pub(crate) mod mock;
 mod rpc;
 mod session;
 mod tls;
