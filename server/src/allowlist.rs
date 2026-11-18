@@ -4,6 +4,8 @@
 //!
 //! Calls run as the logged-in TrueNAS user, so TrueNAS roles still apply on top of this list.
 
+use std::borrow::Cow;
+
 /// Methods the web app may call, by exact name.
 const METHODS: &[&str] = &[
     // Shell: host name and version (READONLY_ADMIN).
@@ -33,18 +35,36 @@ const EVENTS: &[&str] = &[
     "app.query",
 ];
 
+/// Events with arguments (`name:{json}`), each with the check that rebuilds the upstream name
+/// from the browser's argument string. The browser's string is never forwarded as it is.
+type ParamCheck = fn(&str) -> Option<String>;
+
+const PARAM_EVENTS: &[(&str, ParamCheck)] = &[
+    // App logs page: one container's log (APPS_READ). Arguments checked and rebuilt by
+    // `truenas::apps::log_topic`; lines trimmed by `truenas::apps::compact_log_line`.
+    (
+        crate::truenas::apps::LOG_EVENT,
+        crate::truenas::apps::log_topic,
+    ),
+];
+
 /// Exact-name lists of the methods and events the bridge forwards. No prefixes, no wildcards.
 #[derive(Debug, Clone, Copy)]
 pub struct Allowlist {
     methods: &'static [&'static str],
     events: &'static [&'static str],
+    param_events: &'static [(&'static str, ParamCheck)],
 }
 
 impl Allowlist {
     /// A custom list (tests).
     #[cfg(test)]
     pub const fn new(methods: &'static [&'static str], events: &'static [&'static str]) -> Self {
-        Self { methods, events }
+        Self {
+            methods,
+            events,
+            param_events: &[],
+        }
     }
 
     /// Whether the browser may call `method`.
@@ -52,9 +72,15 @@ impl Allowlist {
         self.methods.contains(&method)
     }
 
-    /// Whether the browser may subscribe to `event`.
-    pub fn event(&self, event: &str) -> bool {
-        self.events.contains(&event)
+    /// The name to subscribe to on the NAS when the browser may follow `topic`: the topic
+    /// itself for a listed event, or the rebuilt `name:{json}` of an event with arguments.
+    pub fn event<'a>(&self, topic: &'a str) -> Option<Cow<'a, str>> {
+        if self.events.contains(&topic) {
+            return Some(Cow::Borrowed(topic));
+        }
+        let (name, arg) = topic.split_once(':')?;
+        let (_, check) = self.param_events.iter().find(|(n, _)| *n == name)?;
+        check(arg).map(Cow::Owned)
     }
 }
 
@@ -63,6 +89,7 @@ impl Default for Allowlist {
         Self {
             methods: METHODS,
             events: EVENTS,
+            param_events: PARAM_EVENTS,
         }
     }
 }
@@ -75,7 +102,7 @@ mod tests {
     fn names_match_exactly() {
         let a = Allowlist::default();
         assert!(a.method("system.info"));
-        assert!(a.event("alert.list"));
+        assert!(a.event("alert.list").is_some());
         for near in [
             "system",
             "system.",
@@ -86,17 +113,46 @@ mod tests {
         ] {
             assert!(!a.method(near), "{near:?}");
         }
-        assert!(a.event("reporting.realtime"));
+        assert!(a.event("reporting.realtime").is_some());
         assert!(a.method("pool.query") && a.method("pool.dataset.query"));
-        assert!(a.event("pool.query") && a.event("pool.scan"));
+        assert!(a.event("pool.query").is_some() && a.event("pool.scan").is_some());
         assert!(!a.method("pool.scan") && !a.method("pool.dataset"));
-        assert!(a.method("app.query") && a.event("app.query"));
+        assert!(a.method("app.query") && a.event("app.query").is_some());
         for near in ["app", "app.stats", "app.start", "app.query.", "apps.query"] {
-            assert!(!a.method(near) && !a.event(near), "{near:?}");
+            assert!(!a.method(near) && a.event(near).is_none(), "{near:?}");
         }
-        assert!(!a.event("alert"));
-        assert!(!a.event("reporting.realtime:{\"interval\": 2}"));
+        assert!(a.event("alert").is_none());
+        assert!(a.event("reporting.realtime:{\"interval\": 2}").is_none());
         assert!(!a.method(""));
+    }
+
+    #[test]
+    fn log_topics_are_rebuilt_and_anything_else_with_arguments_refused() {
+        let a = Allowlist::default();
+        let id = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let topic = format!(
+            r#"app.container_log_follow:{{ "tail_lines":50, "container_id":"{id}", "app_name":"plex" }}"#
+        );
+        assert_eq!(
+            a.event(&topic).unwrap(),
+            format!(
+                r#"app.container_log_follow:{{"app_name":"plex","container_id":"{id}","tail_lines":50}}"#
+            )
+        );
+        assert!(matches!(a.event("alert.list").unwrap(), Cow::Borrowed(_)));
+        for refused in [
+            "app.container_log_follow".to_owned(),
+            "app.container_log_follow:".to_owned(),
+            topic.replace("50", "500"),
+            topic.replace("app.container_log_follow", "app.stats"),
+            topic.replace("app.container_log_follow", "App.container_log_follow"),
+            format!(" {topic}"),
+            r#"alert.list:{}"#.to_owned(),
+        ] {
+            assert!(a.event(&refused).is_none(), "{refused}");
+        }
+        // A test list knows no event with arguments.
+        assert!(Allowlist::new(&[], &[]).event(&topic).is_none());
     }
 
     /// Phase 2 is read-only: no action may slip in before its phase and its dialog.
@@ -106,7 +162,8 @@ mod tests {
             ".create", ".update", ".delete", ".do_", ".start", ".stop", ".restart", ".upgrade",
             "reboot", "shutdown", ".set", "dismiss", "restore",
         ];
-        for name in METHODS.iter().chain(EVENTS) {
+        let params = PARAM_EVENTS.iter().map(|(n, _)| n);
+        for name in METHODS.iter().chain(EVENTS).chain(params) {
             assert!(
                 !writes.iter().any(|w| name.contains(w)),
                 "{name} looks like an action"

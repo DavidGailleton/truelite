@@ -1,6 +1,7 @@
 <script lang="ts">
 	// One app: state, version, web UI links, then its containers, ports and folders. Live through
-	// `app.query` events (each one about this app queries it again). Read-only until #33.
+	// `app.query` events (each one about this app queries it again). Read-only until #33. Each
+	// container links to its live log (#32).
 	import { appMounts, containerStateLabel, portLabel } from '#lib/app-detail.js';
 	import { useAppDetail } from '#lib/app-detail.svelte.js';
 	import { stateLabel } from '#lib/apps.js';
@@ -37,7 +38,12 @@
 
 <a class="back" href="/apps"><Icon name="arrow-left" size={16} />Apps</a>
 
-{#snippet openPortal()}
+{#snippet actions()}
+	{#if detail && detail.containers.length > 0}
+		<a class="button-outline link-button" href="/apps/{encodeURIComponent(id)}/logs">
+			<Icon name="scroll-text" size={16} />Logs
+		</a>
+	{/if}
 	{#if primaryPortal}
 		<a class="button-primary" href={primaryPortal.url} target="_blank" rel="noopener noreferrer">
 			Open {primaryPortal.name}
@@ -50,7 +56,7 @@
 	title={detail?.app.name ?? id}
 	{subtitle}
 	loading={view.kind === 'loading'}
-	actions={primaryPortal ? openPortal : undefined}
+	actions={primaryPortal || (detail && detail.containers.length > 0) ? actions : undefined}
 />
 
 {#if app.missing}
@@ -118,6 +124,15 @@
 									{#if container.image}<span class="mono">{container.image}</span>{/if}
 								</div>
 								<StatusPill {...containerStateLabel(container.state)} />
+								<a
+									class="logs"
+									href="/apps/{encodeURIComponent(id)}/logs?service={encodeURIComponent(
+										container.service
+									)}"
+									aria-label="Logs of {container.service}"
+								>
+									<Icon name="scroll-text" size={16} />
+								</a>
 							</li>
 						{/each}
 					</ul>
@@ -184,8 +199,26 @@
 	.link-button {
 		display: inline-flex;
 		align-items: center;
-		margin-top: var(--space-2);
+		gap: var(--space-1);
 		text-decoration: none;
+	}
+	:global(.empty) .link-button {
+		margin-top: var(--space-2);
+	}
+	.logs {
+		display: inline-flex;
+		flex: none;
+		align-items: center;
+		justify-content: center;
+		width: var(--touch);
+		height: var(--touch);
+		margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-3)) calc(-1 * var(--space-2)) 0;
+		border-radius: var(--radius-md);
+		color: var(--text-secondary);
+	}
+	.logs:hover {
+		color: var(--text-primary);
+		background: var(--container-inset);
 	}
 
 	.page {

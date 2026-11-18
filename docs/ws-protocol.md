@@ -64,6 +64,16 @@ A call is never sent twice: after a `timeout` or `reconnecting` it may or may no
 - `{"topic": …, "status": "ended", "error": {…}}`: refused (`not_allowed`, `nas`, `busy`) or
   ended by the NAS. Nothing follows; subscribe again to retry.
 
+### Topics with arguments
+
+Some TrueNAS events take arguments, written after the name as JSON: `name:{…}`. The server
+allows only the ones listed in `PARAM_EVENTS` (`server/src/allowlist.rs`), checks every argument
+with a strict schema (no unknown or missing keys) and subscribes on the NAS under a name it
+rebuilds itself; the browser's string is never forwarded. Messages come back under the
+browser's own `topic` string, so `unsub` takes that same string. Today the only one is
+`app.container_log_follow` (below); `reporting.realtime:{"interval": …}` and the like are
+refused with `not_allowed`.
+
 ## Reshaped topics
 
 Most topics forward the NAS event's `fields` as they are. Some streams are large and mostly
@@ -115,6 +125,31 @@ so the server trims **both the events and the `alert.list` call result** to: `uu
 (the list is `FIELDS` in `server/src/truenas/alerts.rs`). The list includes dismissed alerts.
 `formatted` may contain HTML: show it as text, never as markup. A `removed` event has only its
 `id`.
+
+**`app.container_log_follow:{"app_name", "container_id", "tail_lines"}`**: one container's log
+(needs `APPS_READ`). `app_name` is the app id (lowercase letters, digits, dashes),
+`container_id` the container's `id` from `app.query` (`active_workloads.container_details`, 64 or
+12 hex digits), `tail_lines` the lines of history to send first, 1 to 200 (a whole log is never
+sent). Key order and spaces do not matter.
+
+```json
+→ {"op": "sub", "topic": "app.container_log_follow:{\"app_name\":\"plex\",\"container_id\":\"5c3e…\",\"tail_lines\":200}"}
+← {"topic": "<same string>", "status": "subscribed"}
+← {"topic": "<same string>", "data": {"kind": "added", "id": null, "fields": {"lines": [
+     {"time": "2026-11-18 10:00:01+00:00", "text": "Server started"}]}}}
+```
+
+- Lines come in batches: every line waiting on the server goes in one message, up to 100 lines
+  or 32 KiB of text. `time` is the Docker timestamp as TrueNAS formats it, or `null`; `text` has
+  no trailing newline and is cut at 8 KiB (ending with `…`).
+- There is nothing to query. The tail arrives as the first batches after `subscribed`.
+- `resumed` (after a NAS reconnect) and a new subscription send the tail again: clear the page's
+  lines first. `missed`: some lines were skipped.
+- `ended`: the app is stopped (refused with `nas`, "Unable to retrieve logs of stopped … app"),
+  the container is gone, or the container stopped (the NAS ends the stream). A restarted app may
+  have new container ids: query the app and subscribe again.
+- Two tabs of the same login following the same container share one subscription on the NAS:
+  the second one gets new lines only, not the tail.
 
 ## Link and session
 

@@ -76,6 +76,19 @@ impl Subscription {
             Err(broadcast::error::RecvError::Closed) => None,
         }
     }
+
+    /// The next event if one is already waiting, without waiting: lets a consumer batch a
+    /// burst. `None` when nothing is waiting or the subscription has ended (then
+    /// [`recv`](Self::recv) says which).
+    pub fn try_recv(&mut self) -> Option<Event> {
+        match self.rx.try_recv() {
+            Ok(e) => Some(e),
+            Err(broadcast::error::TryRecvError::Lagged(n)) => Some(Event::Missed(n)),
+            Err(broadcast::error::TryRecvError::Empty | broadcast::error::TryRecvError::Closed) => {
+                None
+            }
+        }
+    }
 }
 
 impl Drop for Subscription {
@@ -127,9 +140,15 @@ impl Topics {
     }
 
     /// Registers a topic subscribed upstream as `upstream` (`None` while disconnected).
-    pub(super) fn insert(&mut self, name: &str, upstream: Option<String>) -> Subscription {
+    /// A new topic with its first handle. `buffer` overrides the default for this topic.
+    pub(super) fn insert(
+        &mut self,
+        name: &str,
+        upstream: Option<String>,
+        buffer: Option<usize>,
+    ) -> Subscription {
         let name: Arc<str> = Arc::from(name);
-        let (tx, rx) = broadcast::channel(self.buffer);
+        let (tx, rx) = broadcast::channel(buffer.unwrap_or(self.buffer).max(1));
         let generation = self.next_generation;
         self.next_generation += 1;
         self.map.insert(
@@ -309,7 +328,7 @@ mod tests {
     #[test]
     fn the_last_release_returns_the_upstream_id() {
         let (mut t, mut rel) = topics();
-        let a = t.insert("alert.list", Some("sub-1".into()));
+        let a = t.insert("alert.list", Some("sub-1".into()), None);
         let b = t.join("alert.list").unwrap();
         drop(a);
         assert_eq!(t.release(rel.try_recv().unwrap()), None);
@@ -321,9 +340,9 @@ mod tests {
     #[test]
     fn a_handle_of_an_ended_topic_does_not_release_its_successor() {
         let (mut t, mut rel) = topics();
-        let old = t.insert("alert.list", Some("sub-1".into()));
+        let old = t.insert("alert.list", Some("sub-1".into()), None);
         t.end("alert.list", Error::Closed);
-        let new = t.insert("alert.list", Some("sub-2".into()));
+        let new = t.insert("alert.list", Some("sub-2".into()), None);
         drop(old);
         assert_eq!(t.release(rel.try_recv().unwrap()), None);
         drop(new);
@@ -333,7 +352,7 @@ mod tests {
     #[test]
     fn dispatch_routes_by_collection() {
         let (mut t, _rel) = topics();
-        let mut sub = t.insert("alert.list", Some("sub-1".into()));
+        let mut sub = t.insert("alert.list", Some("sub-1".into()), None);
         let other = note("collection_update", json!({"collection": "disk.query"}));
         assert!(t.dispatch(other).is_some());
         let mine = note(
@@ -346,5 +365,37 @@ mod tests {
         };
         assert_eq!((u.kind, u.id.clone()), (UpdateKind::Added, Some(json!(1))));
         assert!(t.dispatch(note("something_else", json!({}))).is_some());
+    }
+
+    #[test]
+    fn a_topic_buffer_can_be_set_and_try_recv_never_waits() {
+        // The default here is 4: a topic made with 8 holds 8 events before it lags.
+        let (mut t, _rel) = topics();
+        let line = |n: u64| {
+            note(
+                "collection_update",
+                json!({"msg": "added", "collection": "log:x", "fields": {"n": n}}),
+            )
+        };
+        let mut big = t.insert("log:x", Some("sub-1".into()), Some(8));
+        assert!(big.try_recv().is_none());
+        for n in 0..8 {
+            assert!(t.dispatch(line(n)).is_none());
+        }
+        for n in 0..8 {
+            let Some(Event::Update(u)) = big.try_recv() else {
+                panic!("expected update {n}")
+            };
+            assert_eq!(u.fields, json!({"n": n}));
+        }
+        assert!(big.try_recv().is_none());
+
+        let mut small = t.insert("log:y", Some("sub-2".into()), None);
+        for n in 0..6 {
+            let mut l = line(n);
+            l.params["collection"] = json!("log:y");
+            t.dispatch(l);
+        }
+        assert!(matches!(small.try_recv(), Some(Event::Missed(2))));
     }
 }

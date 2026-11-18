@@ -114,6 +114,8 @@ enum Cmd {
     Logout(oneshot::Sender<()>),
     Subscribe {
         name: String,
+        /// Events kept for a slow consumer; `None` = [`SessionOptions::event_buffer`].
+        buffer: Option<usize>,
         reply: oneshot::Sender<Result<Subscription, Error>>,
     },
     #[cfg(test)]
@@ -249,12 +251,28 @@ impl Session {
     /// [`Error::Rpc`] when the NAS refuses the event (unknown, or a role is missing),
     /// [`Error::LoggedOut`] when the session has ended, and the errors of [`Session::call`].
     pub async fn subscribe(&self, event: &str) -> Result<Subscription, Error> {
+        self.subscribe_with_buffer(event, None).await
+    }
+
+    /// [`subscribe`](Self::subscribe), keeping up to `buffer` events for a slow consumer instead
+    /// of [`SessionOptions::event_buffer`], for a stream that comes in bursts (a log tail). Only
+    /// the handle that creates the topic sets it.
+    ///
+    /// # Errors
+    ///
+    /// As [`subscribe`](Self::subscribe).
+    pub async fn subscribe_with_buffer(
+        &self,
+        event: &str,
+        buffer: Option<usize>,
+    ) -> Result<Subscription, Error> {
         self.client().await?;
         let (reply, rx) = oneshot::channel();
         self.inner
             .cmds
             .send(Cmd::Subscribe {
                 name: event.to_owned(),
+                buffer,
                 reply,
             })
             .await
@@ -373,8 +391,8 @@ impl Supervisor {
                         let _ = done.send(());
                         return Disconnect::Stop;
                     }
-                    Some(Cmd::Subscribe { name, reply }) => {
-                        let res = self.subscribe(Some(client), &name).await;
+                    Some(Cmd::Subscribe { name, buffer, reply }) => {
+                        let res = self.subscribe(Some(client), &name, buffer).await;
                         let _ = reply.send(res);
                     }
                     #[cfg(test)]
@@ -438,8 +456,8 @@ impl Supervisor {
                                 return None;
                             }
                             // Sent just before the link dropped: made upstream once back.
-                            Some(Cmd::Subscribe { name, reply }) => {
-                                let res = self.subscribe(None, &name).await;
+                            Some(Cmd::Subscribe { name, buffer, reply }) => {
+                                let res = self.subscribe(None, &name, buffer).await;
                                 let _ = reply.send(res);
                             }
                             #[cfg(test)]
@@ -483,6 +501,7 @@ impl Supervisor {
         &mut self,
         client: Option<&Client>,
         name: &str,
+        buffer: Option<usize>,
     ) -> Result<Subscription, Error> {
         if let Some(sub) = self.topics.join(name) {
             return Ok(sub);
@@ -492,7 +511,7 @@ impl Supervisor {
             None => None,
         };
         tracing::debug!(event = name, "subscribed");
-        Ok(self.topics.insert(name, upstream))
+        Ok(self.topics.insert(name, upstream, buffer))
     }
 
     async fn release(&mut self, client: Option<&Client>, r: Release) {
@@ -1085,6 +1104,58 @@ mod tests {
             "compact: {:?}",
             crate::truenas::realtime::compact(&u.fields)
         );
+        drop(sub);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        within(s.logout()).await;
+    }
+
+    /// Against a real NAS (#32): follow the log of the first running app's first container, as
+    /// the bridge would, and check its lines arrive under the full `name:{args}` collection.
+    /// Same variables as `nas_events_smoke`; needs a running app;
+    /// `cargo test nas_logs_smoke -- --ignored --nocapture`.
+    #[tokio::test]
+    #[ignore = "needs a real NAS, credentials and a running app"]
+    async fn nas_logs_smoke() {
+        let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("{k} not set"));
+        let pin: Fingerprint = var("TRUELITE_NAS_FINGERPRINT").parse().unwrap();
+        let ep = Endpoint::new(var("TRUELITE_NAS_URL"), Some(pin)).unwrap();
+        let password = Secret::new(var("TRUELITE_NAS_PASSWORD"));
+        let step = within(login(
+            &ep,
+            SessionOptions::default(),
+            &var("TRUELITE_NAS_USER"),
+            password,
+        ))
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+        let LoginStep::Done(s) = step else {
+            panic!("this account needs a one-time code; use one without 2FA")
+        };
+        let apps = within(s.call(
+            "app.query",
+            json!([[["state", "=", "RUNNING"]], {"select": ["name", "active_workloads"]}]),
+        ))
+        .await
+        .unwrap();
+        let app = &apps[0];
+        let name = app["name"].as_str().expect("no running app");
+        let container = app["active_workloads"]["container_details"][0]["id"]
+            .as_str()
+            .unwrap();
+        println!("{name} container {container}");
+        let arg = json!({"app_name": name, "container_id": container, "tail_lines": 5});
+        let topic = crate::truenas::apps::log_topic(&arg.to_string()).expect("ids truelite takes");
+        let mut sub = within(s.subscribe_with_buffer(&topic, Some(512)))
+            .await
+            .unwrap();
+        for _ in 0..5 {
+            let u = update(next(&mut sub).await);
+            println!(
+                "{:?} {:?}",
+                u.kind,
+                crate::truenas::apps::compact_log_line(&u.fields)
+            );
+        }
         drop(sub);
         tokio::time::sleep(Duration::from_millis(200)).await;
         within(s.logout()).await;

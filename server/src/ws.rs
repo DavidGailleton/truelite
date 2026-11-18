@@ -6,6 +6,7 @@
 //! tasks and hand their messages back over a bounded channel, so a slow browser slows them down
 //! instead of growing memory; a subscriber that falls too far behind gets `missed`.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -32,6 +33,12 @@ const MAX_CALLS: usize = 16;
 const MAX_TOPICS: usize = 16;
 /// Messages queued for the browser before calls and subscriptions wait.
 const OUT_BUFFER: usize = 256;
+/// Log lines a log topic keeps for a slow page before it gets `missed`: a 200-line tail comes in
+/// one burst.
+const LOG_BUFFER: usize = 512;
+/// A batch of log lines ends at this many lines or bytes of text, whichever comes first.
+const LOG_BATCH_LINES: usize = 100;
+const LOG_BATCH_BYTES: usize = 32 * 1024;
 /// Keeps proxies (Tailscale, a VPS reverse proxy) from dropping an idle socket.
 const PING_EVERY: Duration = Duration::from_secs(30);
 /// Close code when the session has ended: the web app goes to the login page.
@@ -419,11 +426,11 @@ impl Bridge {
     }
 
     fn sub(&mut self, topic: String) -> Option<String> {
-        if !self.allow.event(&topic) {
+        let Some(upstream) = self.allow.event(&topic).map(Cow::into_owned) else {
             tracing::warn!(%topic, "refused: event not allowed");
             let error = WireError::new("not_allowed", "truelite does not allow this event");
             return Some(status(&topic, Status::Ended { error }));
-        }
+        };
         while self.subs.try_join_next().is_some() {}
         self.topics.retain(|_, task| !task.is_finished());
         if self.topics.contains_key(&topic) {
@@ -435,17 +442,34 @@ impl Bridge {
         }
         tracing::debug!(%topic, "subscribe");
         let task = self.subs.spawn(
-            forward(self.session.clone(), topic.clone(), self.out_tx.clone()).in_current_span(),
+            forward(
+                self.session.clone(),
+                topic.clone(),
+                upstream,
+                self.out_tx.clone(),
+            )
+            .in_current_span(),
         );
         self.topics.insert(topic, task);
         None
     }
 }
 
-/// Subscribes to `topic` and forwards its events until it ends, the socket closes or the task
-/// is aborted (`unsub`). Dropping the subscription unsubscribes on the NAS.
-async fn forward(session: truenas::Session, topic: String, out: mpsc::Sender<String>) {
-    let mut sub = match session.subscribe(&topic).await {
+/// Subscribes to `upstream` (the NAS name of the browser's `topic`) and forwards its events
+/// under `topic` until it ends, the socket closes or the task is aborted (`unsub`). Dropping the
+/// subscription unsubscribes on the NAS.
+async fn forward(
+    session: truenas::Session,
+    topic: String,
+    upstream: String,
+    out: mpsc::Sender<String>,
+) {
+    let event = upstream
+        .split_once(':')
+        .map_or(upstream.as_str(), |(name, _)| name);
+    let logs = event == truenas::apps::LOG_EVENT;
+    let buffer = logs.then_some(LOG_BUFFER);
+    let mut sub = match session.subscribe_with_buffer(&upstream, buffer).await {
         Ok(sub) => sub,
         Err(e) => {
             tracing::debug!(%topic, error = %e, "subscribe failed");
@@ -457,14 +481,17 @@ async fn forward(session: truenas::Session, topic: String, out: mpsc::Sender<Str
     if out.send(status(&topic, Status::Subscribed)).await.is_err() {
         return;
     }
-    let reshape = reshaper(&topic);
+    if logs {
+        return forward_logs(&topic, sub, &out).await;
+    }
+    let reshape = reshaper(event);
     let mut warned = false;
     while let Some(event) = sub.recv().await {
-        let (msg, last) = match event {
+        let msg = match event {
             Event::Update(u) => match reshape {
                 // A removal carries only the id: nothing to reshape.
                 Some(compact) if !u.fields.is_null() => match compact(&u.fields) {
-                    Some(fields) => (data(&topic, &u, &fields), false),
+                    Some(fields) => data(&topic, &u, &fields),
                     None => {
                         // Once per subscription: the NAS could repeat it every 2 s.
                         if !warned {
@@ -474,18 +501,86 @@ async fn forward(session: truenas::Session, topic: String, out: mpsc::Sender<Str
                         continue;
                     }
                 },
-                _ => (data(&topic, &u, &u.fields), false),
+                _ => data(&topic, &u, &u.fields),
             },
-            Event::Resumed => (status(&topic, Status::Resumed), false),
-            Event::Missed(count) => (status(&topic, Status::Missed { count }), false),
-            Event::Ended(e) => {
-                let error = WireError::from_nas(&e);
-                (status(&topic, Status::Ended { error }), true)
+            other => {
+                let (msg, last) = topic_status(&topic, &other);
+                if out.send(msg).await.is_err() || last {
+                    return;
+                }
+                continue;
             }
         };
-        if out.send(msg).await.is_err() || last {
+        if out.send(msg).await.is_err() {
             return;
         }
+    }
+}
+
+/// A non-update event as a status message, and whether it is the last one.
+fn topic_status(topic: &str, event: &Event) -> (String, bool) {
+    match event {
+        Event::Resumed => (status(topic, Status::Resumed), false),
+        Event::Missed(count) => (status(topic, Status::Missed { count: *count }), false),
+        Event::Ended(e) => {
+            let error = WireError::from_nas(e);
+            (status(topic, Status::Ended { error }), true)
+        }
+        // Not a status; the callers handle updates themselves.
+        Event::Update(_) => unreachable!("an update is not a status"),
+    }
+}
+
+/// A container log: lines come one event each, often in bursts (the tail, a chatty app), so
+/// every line already waiting goes out in one `data` message, `fields` = `{"lines": [...]}`
+/// (see [`truenas::apps::compact_log_line`]).
+async fn forward_logs(topic: &str, mut sub: truenas::Subscription, out: &mpsc::Sender<String>) {
+    let mut warned = false;
+    let mut waiting = sub.recv().await;
+    while let Some(first) = waiting {
+        let mut lines = Vec::new();
+        let mut bytes = 0;
+        let mut next = Some(first);
+        while let Some(Event::Update(u)) = &next {
+            match truenas::apps::compact_log_line(&u.fields) {
+                Some(line) => {
+                    bytes += line["text"].as_str().map_or(0, str::len);
+                    lines.push(line);
+                }
+                None if !warned => {
+                    tracing::warn!(%topic, "log line of an unexpected shape, not forwarded");
+                    warned = true;
+                }
+                None => {}
+            }
+            next = if lines.len() >= LOG_BATCH_LINES || bytes >= LOG_BATCH_BYTES {
+                None
+            } else {
+                sub.try_recv()
+            };
+        }
+        if !lines.is_empty() {
+            let fields = serde_json::json!({ "lines": lines });
+            let msg = encode(&TopicData {
+                topic,
+                data: UpdateData {
+                    kind: "added",
+                    id: &None,
+                    fields: &fields,
+                },
+            });
+            if out.send(msg).await.is_err() {
+                return;
+            }
+        }
+        // What stopped the batch: a status (sent after the lines, in order), or nothing.
+        if let Some(event) = next {
+            let (msg, last) = topic_status(topic, &event);
+            if out.send(msg).await.is_err() || last {
+                return;
+            }
+        }
+        waiting = sub.recv().await;
     }
 }
 
@@ -832,6 +927,96 @@ mod tests {
 
         send(&mut ws, json!({"op": "unsub", "topic": "pool.scan"})).await;
         h.until_nas_saw("core.unsubscribe").await;
+    }
+
+    /// #32: a log topic goes upstream under the name truelite rebuilds, comes back under the
+    /// browser's own string, in batches of trimmed lines, in order; the end of the stream ends it.
+    #[tokio::test]
+    async fn container_logs_arrive_in_batches_under_the_browsers_topic() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        let id = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let topic = format!(
+            r#"app.container_log_follow:{{"tail_lines": 200, "app_name": "plex", "container_id": "{id}"}}"#
+        );
+        let upstream = format!(
+            r#"app.container_log_follow:{{"app_name":"plex","container_id":"{id}","tail_lines":200}}"#
+        );
+        send(&mut ws, json!({"op": "sub", "topic": topic})).await;
+        assert_eq!(
+            next(&mut ws).await,
+            json!({"topic": topic, "status": "subscribed"})
+        );
+        let subscribed: Vec<Value> = h
+            .mock
+            .requests()
+            .into_iter()
+            .filter(|c| c.method == "core.subscribe")
+            .map(|c| c.params)
+            .collect();
+        assert_eq!(subscribed, vec![json!([upstream])]);
+
+        const LINES: usize = 150;
+        for n in 0..LINES {
+            h.mock.push(json!({"jsonrpc": "2.0", "method": "collection_update", "params": {
+                "msg": "added", "collection": upstream,
+                "fields": {"data": format!("line {n}\n"), "timestamp": "2026-11-18 10:00:00+00:00"}}}));
+        }
+        // Another app's log on the same session is not this topic's.
+        h.mock.push(
+            json!({"jsonrpc": "2.0", "method": "collection_update", "params": {
+            "msg": "added", "collection": upstream.replace("plex", "sonarr"),
+            "fields": {"data": "not mine", "timestamp": null}}}),
+        );
+        let mut got = Vec::new();
+        while got.len() < LINES {
+            let msg = next(&mut ws).await;
+            assert_eq!(msg["topic"], json!(topic));
+            assert_eq!(
+                (&msg["data"]["kind"], &msg["data"]["id"]),
+                (&json!("added"), &Value::Null)
+            );
+            let lines = msg["data"]["fields"]["lines"].as_array().unwrap();
+            assert!(
+                !lines.is_empty() && lines.len() <= LOG_BATCH_LINES,
+                "{}",
+                lines.len()
+            );
+            got.extend(lines.iter().cloned());
+        }
+        for (n, line) in got.iter().enumerate() {
+            assert_eq!(
+                line,
+                &json!({"time": "2026-11-18 10:00:00+00:00", "text": format!("line {n}")})
+            );
+        }
+
+        // The container stopped: TrueNAS ends the stream without an error.
+        h.mock.push(
+            json!({"jsonrpc": "2.0", "method": "notify_unsubscribed", "params": {
+            "collection": upstream, "error": null}}),
+        );
+        let ended = next(&mut ws).await;
+        assert_eq!(
+            (&ended["topic"], &ended["status"], &ended["error"]["code"]),
+            (&json!(topic), &json!("ended"), &json!("nas"))
+        );
+
+        // A log topic with arguments truelite does not take never reaches the NAS.
+        let all = topic.replace("200", "null");
+        send(&mut ws, json!({"op": "sub", "topic": all})).await;
+        let refused = next(&mut ws).await;
+        assert_eq!(
+            (&refused["topic"], &refused["error"]["code"]),
+            (&json!(all), &json!("not_allowed"))
+        );
+        assert_eq!(
+            h.methods()
+                .iter()
+                .filter(|m| *m == "core.subscribe")
+                .count(),
+            1
+        );
     }
 
     #[tokio::test]

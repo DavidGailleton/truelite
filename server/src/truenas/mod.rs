@@ -25,7 +25,7 @@ mod tls;
 pub use auth::{LoginStep, PendingOtp, Secret, login};
 pub use client::{Scheme, check_url};
 pub use error::{AuthFailure, Error};
-pub use events::{Event, Update, UpdateKind};
+pub use events::{Event, Subscription, Update, UpdateKind};
 #[cfg(test)]
 pub use session::EndReason;
 pub use session::{Endpoint, Link, Session, SessionOptions};
