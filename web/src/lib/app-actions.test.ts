@@ -4,6 +4,8 @@ import {
 	actionDialog,
 	actionError,
 	appActions,
+	busyLine,
+	type ActionRun,
 	canChangeApps
 } from './app-actions';
 
@@ -53,5 +55,43 @@ describe('actionError', () => {
 		expect(actionError('start', { code: 'nas', message: 'Image pull failed' })).toBe(
 			"Couldn't start the app: Image pull failed"
 		);
+	});
+});
+
+describe('busyLine', () => {
+	const run = (patch: Partial<ActionRun>): ActionRun => ({
+		action: 'start',
+		progress: null,
+		done: false,
+		error: null,
+		...patch
+	});
+	const progress = { percent: 40, description: 'Pulling' };
+
+	it("shows the job's progress while it runs", () => {
+		expect(busyLine(run({ progress }), 'stopped')).toEqual({ label: 'Starting…', progress });
+	});
+
+	it('waits after the job until the app reaches its new state', () => {
+		const done = run({ done: true, progress });
+		// The state event may come after the job's reply: still the old state.
+		expect(busyLine(done, 'stopped')).toEqual({
+			label: 'Waiting for the app to start…',
+			progress: null
+		});
+		expect(busyLine(done, 'deploying')?.label).toBe('Waiting for the app to start…');
+		expect(busyLine(done, 'running')).toBeNull();
+		expect(busyLine(done, 'crashed')).toBeNull();
+		expect(busyLine(run({ action: 'stop', done: true }), 'stopping')?.label).toBe(
+			'Waiting for the app to stop…'
+		);
+		expect(busyLine(run({ action: 'stop', done: true }), 'stopped')).toBeNull();
+	});
+
+	it('follows a start or stop it did not ask for, and stays quiet otherwise', () => {
+		expect(busyLine(undefined, 'deploying')).toEqual({ label: 'Starting…', progress: null });
+		expect(busyLine(undefined, 'stopping')?.label).toBe('Stopping…');
+		expect(busyLine(undefined, 'running')).toBeNull();
+		expect(busyLine(run({ error: 'Nope' }), 'stopped')).toBeNull();
 	});
 });

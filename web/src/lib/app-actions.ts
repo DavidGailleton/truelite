@@ -3,7 +3,7 @@
 // their buttons and dialogs. Framework-free so it can be unit-tested: the Svelte binding lives in
 // app-actions.svelte.ts.
 import type { AppState } from './apps';
-import type { ErrorBody } from './ws';
+import type { ErrorBody, JobProgress } from './ws';
 
 export type AppAction = 'start' | 'stop' | 'restart';
 
@@ -41,6 +41,57 @@ export const ACTION_RUNNING: Record<AppAction, string> = {
 	stop: 'Stopping…',
 	restart: 'Restarting…'
 };
+
+/**
+ * The states that end an action. The job ends as soon as the NAS has asked Docker; the app then
+ * stays DEPLOYING or STOPPING for a while, so the page waits for one of these.
+ */
+const ACTION_DONE: Record<AppAction, readonly AppState[]> = {
+	start: ['running', 'crashed'],
+	stop: ['stopped', 'crashed'],
+	restart: ['running', 'crashed']
+};
+
+/** What the progress line says once the job is over but the app hasn't settled yet. */
+const ACTION_SETTLING: Record<AppAction, string> = {
+	start: 'Waiting for the app to start…',
+	stop: 'Waiting for the app to stop…',
+	restart: 'Waiting for the app to come back…'
+};
+
+/** An action as the page tracks it (app-actions.svelte.ts). */
+export interface ActionRun {
+	action: AppAction;
+	/** `null` until the NAS reports the job. */
+	progress: JobProgress | null;
+	/** The job ended well; the app may still be on its way to its new state. */
+	done: boolean;
+	/** Set when the action failed. */
+	error: string | null;
+}
+
+export interface Busy {
+	label: string;
+	progress: JobProgress | null;
+}
+
+/**
+ * What the progress line shows for an app in `state` with `run` (if any): the job's progress,
+ * then a wait until the app reaches its new state; also while the app is starting or stopping
+ * for another reason (another tab, the NAS itself). `null` when nothing is going on.
+ */
+export function busyLine(run: ActionRun | undefined, state: AppState): Busy | null {
+	if (run && run.error === null) {
+		if (!run.done) return { label: ACTION_RUNNING[run.action], progress: run.progress };
+		const settled = state !== 'deploying' && state !== 'stopping';
+		if (!settled || !ACTION_DONE[run.action].includes(state)) {
+			return { label: ACTION_SETTLING[run.action], progress: null };
+		}
+	}
+	if (state === 'deploying') return { label: 'Starting…', progress: null };
+	if (state === 'stopping') return { label: 'Stopping…', progress: null };
+	return null;
+}
 
 export interface ActionDialog {
 	title: string;

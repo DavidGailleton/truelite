@@ -4,13 +4,13 @@
 	// live log (#32). Start, stop and restart, confirmed in a dialog, with the job's progress (#33).
 	import {
 		ACTION_LABELS,
-		ACTION_RUNNING,
 		actionDialog,
 		appActions,
+		busyLine,
 		canChangeApps,
 		type AppAction
 	} from '#lib/app-actions.js';
-	import { actionRun, dismissAction, runAction } from '#lib/app-actions.svelte.js';
+	import { actionRun, dismissAction, finishAction, runAction } from '#lib/app-actions.svelte.js';
 	import { appMounts, containerStateLabel, portLabel } from '#lib/app-detail.js';
 	import { useAppDetail } from '#lib/app-detail.svelte.js';
 	import { stateLabel } from '#lib/apps.js';
@@ -49,6 +49,12 @@
 
 	const ACTION_ICONS = { start: 'play', stop: 'square', restart: 'rotate-cw' } as const;
 	const run = $derived(actionRun(id));
+	// The job, then the wait for the app's new state (or a start/stop from elsewhere).
+	const busy = $derived(detail ? busyLine(run, detail.app.state) : null);
+	// The app reached its new state: the done run has nothing more to show.
+	$effect(() => {
+		if (run?.done && detail && busy === null) finishAction(id);
+	});
 	// Actions need the NAS link and the Apps write role; none while the app is changing.
 	const actions = $derived(
 		detail && view.kind === 'ready' && !view.paused && canChangeApps(session.user?.roles)
@@ -115,8 +121,8 @@
 						/>{/if}
 				</div>
 				{#if detail.description}<p class="description">{detail.description}</p>{/if}
-				{#if run && run.error === null}
-					<JobProgress progress={run.progress} label={ACTION_RUNNING[run.action]} />
+				{#if busy}
+					<JobProgress progress={busy.progress} label={busy.label} />
 				{:else if actions.length > 0}
 					<div class="app-actions">
 						{#each actions as action (action)}
