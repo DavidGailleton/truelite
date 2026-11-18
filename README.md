@@ -66,7 +66,7 @@ to check). Get the value with
 If you replace the NAS certificate, truelite refuses to connect and logs the new fingerprint:
 check it, then update the variable.
 
-Checks run in CI: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, `npm run check`, `npm test`.
+Checks run in CI: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, `npm run lint` (Prettier), `npm run check`, `npm test`.
 
 ## Deploy on TrueNAS
 

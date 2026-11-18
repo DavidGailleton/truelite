@@ -34,7 +34,7 @@ cd server && cargo run                         # config from env, see .env.examp
 Checks (exactly what CI runs, `.github/workflows/ci.yml`):
 
 ```sh
-cd web && npm ci && npm run check && npm test && npm run build
+cd web && npm ci && npm run lint && npm run check && npm test && npm run build
 cd server && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 cargo test health_ok                           # single test by name (from server/)
 cargo test journey                             # end-to-end: login → /ws → NAS reconnect → logout

@@ -27,6 +27,6 @@ GitHub Release and pushes the image `ghcr.io/davidgailleton/truelite:X.Y.Z` (+ `
 Run what CI runs before pushing:
 
 ```sh
-cd web && npm ci && npm run check && npm test && npm run build
+cd web && npm ci && npm run lint && npm run check && npm test && npm run build
 cd server && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 ```
