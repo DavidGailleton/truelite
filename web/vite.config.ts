@@ -23,8 +23,10 @@ export default defineConfig({
 	},
 	server: {
 		proxy: {
-			'/api': backend,
-			'/ws': { target: backend.replace(/^http/, 'ws'), ws: true }
+			// Keep the browser's Host: the server refuses an Origin that does not match it.
+			// (The string shorthand would set changeOrigin and rewrite Host to the backend.)
+			'/api': { target: backend, changeOrigin: false },
+			'/ws': { target: backend.replace(/^http/, 'ws'), ws: true, changeOrigin: false }
 		}
 	}
 });
