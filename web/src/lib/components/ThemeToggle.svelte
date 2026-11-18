@@ -37,8 +37,7 @@
 		padding: 0;
 		border: 0;
 		border-radius: var(--radius-lg);
-		background: var(--container);
-		box-shadow: var(--shadow-sm);
+		background: transparent;
 		color: var(--text-secondary);
 		cursor: pointer;
 		transition:
@@ -46,7 +45,7 @@
 			color var(--duration-fast);
 	}
 	.theme-toggle:hover {
-		background: var(--container-hover);
+		background: var(--surface-hover);
 		color: var(--text-primary);
 	}
 	@media (min-width: 1024px) {
