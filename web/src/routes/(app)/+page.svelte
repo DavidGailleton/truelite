@@ -1,12 +1,23 @@
 <script lang="ts">
-	// Dashboard: what needs attention first (alerts, #27), then system, live stats and storage.
+	// Dashboard: what needs attention first (alerts, #27; a pool in trouble), then live stats,
+	// storage and system.
 	import LiveStats from '#lib/components/LiveStats.svelte';
 	import PageHeader from '#lib/components/PageHeader.svelte';
+	import PoolsCard from '#lib/components/PoolsCard.svelte';
 	import SystemInfo from '#lib/components/SystemInfo.svelte';
 	import { formatUptime, versionLabel } from '#lib/system.js';
+	import { poolRows } from '#lib/pools.js';
+	import { pools, usePools } from '#lib/pools.svelte.js';
 	import { system, uptimeNow, useSystemInfo } from '#lib/system.svelte.js';
 
 	useSystemInfo();
+	const poolTopics = usePools();
+
+	// A pool in trouble goes to the top; otherwise storage follows the live stats.
+	const poolTrouble = $derived(
+		pools.list !== null &&
+			poolRows(pools.list, pools.usage, Date.now()).some((r) => r.health.level !== 'ok')
+	);
 
 	const info = $derived(system.info);
 	const uptime = $derived(uptimeNow());
@@ -18,7 +29,9 @@
 <PageHeader title={info?.hostname ?? 'Dashboard'} {subtitle} />
 
 <div class="grid">
+	{#if poolTrouble}<PoolsCard onretry={poolTopics.retry} />{/if}
 	<LiveStats />
+	{#if !poolTrouble}<PoolsCard onretry={poolTopics.retry} />{/if}
 	<SystemInfo />
 </div>
 

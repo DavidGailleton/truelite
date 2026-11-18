@@ -24,13 +24,13 @@ export interface SystemInfo {
 	timezone: string | null;
 }
 
-const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-const isStr = (v: unknown): v is string => typeof v === 'string';
-const isObj = (v: unknown): v is Record<string, unknown> =>
+export const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+export const isStr = (v: unknown): v is string => typeof v === 'string';
+export const isObj = (v: unknown): v is Record<string, unknown> =>
 	typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** A middleware datetime: `{"$date": ms}` on the wire, or an ISO string. */
-function parseDate(v: unknown): Date | null {
+export function parseDate(v: unknown): Date | null {
 	const raw = isObj(v) ? v.$date : v;
 	if (!isNum(raw) && !isStr(raw)) return null;
 	const d = new Date(raw);
