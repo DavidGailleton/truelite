@@ -14,6 +14,8 @@ const METHODS: &[&str] = &[
     "pool.query",
     // Dashboard: usable space of the pools' root datasets (DATASET_READ).
     "pool.dataset.query",
+    // Dashboard: apps summary, with `select` (APPS_READ).
+    "app.query",
 ];
 
 /// Events the web app may subscribe to, by exact name.
@@ -26,6 +28,8 @@ const EVENTS: &[&str] = &[
     "pool.query",
     // Dashboard: scrub and resilver progress (POOL_SCRUB_READ).
     "pool.scan",
+    // Dashboard: app changes (APPS_READ). Reshaped by `truenas::apps` (no workloads, metadata).
+    "app.query",
 ];
 
 /// Exact-name lists of the methods and events the bridge forwards. No prefixes, no wildcards.
@@ -85,6 +89,10 @@ mod tests {
         assert!(a.method("pool.query") && a.method("pool.dataset.query"));
         assert!(a.event("pool.query") && a.event("pool.scan"));
         assert!(!a.method("pool.scan") && !a.method("pool.dataset"));
+        assert!(a.method("app.query") && a.event("app.query"));
+        for near in ["app", "app.stats", "app.start", "app.query.", "apps.query"] {
+            assert!(!a.method(near) && !a.event(near), "{near:?}");
+        }
         assert!(!a.event("alert"));
         assert!(!a.event("reporting.realtime:{\"interval\": 2}"));
         assert!(!a.method(""));

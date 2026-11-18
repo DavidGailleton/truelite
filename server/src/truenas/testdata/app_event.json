@@ -1,0 +1,102 @@
+{
+  "name": "jellyfin",
+  "id": "jellyfin",
+  "active_workloads": {
+    "containers": 2,
+    "used_ports": [
+      {
+        "container_port": 8096,
+        "protocol": "tcp",
+        "host_ports": [
+          {"host_port": 30013, "host_ip": "0.0.0.0"},
+          {"host_port": 30013, "host_ip": "::"}
+        ]
+      }
+    ],
+    "used_host_ips": ["0.0.0.0", "::"],
+    "container_details": [
+      {
+        "service_name": "jellyfin",
+        "image": "jellyfin/jellyfin:10.11.2",
+        "port_config": [
+          {
+            "container_port": 8096,
+            "protocol": "tcp",
+            "host_ports": [
+              {"host_port": 30013, "host_ip": "0.0.0.0"},
+              {"host_port": 30013, "host_ip": "::"}
+            ]
+          }
+        ],
+        "state": "running",
+        "volume_mounts": [
+          {"source": "/mnt/tank/media", "destination": "/media", "mode": "ro", "type": "bind"},
+          {"source": "/mnt/.ix-apps/app_mounts/jellyfin/config", "destination": "/config", "mode": "rw", "type": "bind"},
+          {"source": "/mnt/.ix-apps/app_mounts/jellyfin/cache", "destination": "/cache", "mode": "rw", "type": "bind"}
+        ],
+        "id": "5c3e1d2b9f8a7e6d5c4b3a291807f6e5d4c3b2a1908f7e6d5c4b3a2910f8e7d6"
+      },
+      {
+        "service_name": "permissions",
+        "image": "ixsystems/container-utils:1.0.2",
+        "port_config": [],
+        "state": "exited",
+        "volume_mounts": [
+          {"source": "/mnt/.ix-apps/app_mounts/jellyfin/config", "destination": "/mnt/config", "mode": "rw", "type": "bind"}
+        ],
+        "id": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
+      }
+    ],
+    "volumes": [
+      {"source": "/mnt/tank/media", "destination": "/media", "mode": "ro", "type": "bind"},
+      {"source": "/mnt/.ix-apps/app_mounts/jellyfin/config", "destination": "/config", "mode": "rw", "type": "bind"},
+      {"source": "/mnt/.ix-apps/app_mounts/jellyfin/cache", "destination": "/cache", "mode": "rw", "type": "bind"}
+    ],
+    "images": ["jellyfin/jellyfin:10.11.2", "ixsystems/container-utils:1.0.2"],
+    "networks": [
+      {
+        "Name": "ix-jellyfin_default",
+        "Id": "8f7e6d5c4b3a29108f7e6d5c4b3a29108f7e6d5c4b3a29108f7e6d5c4b3a2910",
+        "Labels": {"com.docker.compose.network": "default", "com.docker.compose.project": "ix-jellyfin"}
+      }
+    ]
+  },
+  "state": "RUNNING",
+  "upgrade_available": true,
+  "latest_version": "1.3.4",
+  "image_updates_available": false,
+  "custom_app": false,
+  "migrated": false,
+  "human_version": "10.11.2_1.3.1",
+  "version": "1.3.1",
+  "metadata": {
+    "app_version": "10.11.2",
+    "capabilities": [],
+    "categories": ["media"],
+    "description": "Jellyfin is a Free Software Media System that puts you in control of managing and streaming your media. It is an alternative to the proprietary Emby and Plex, to provide media from a dedicated server to end-user devices via multiple apps.",
+    "home": "https://jellyfin.org",
+    "host_mounts": [],
+    "icon": "https://media.sys.truenas.net/apps/jellyfin/icons/icon.png",
+    "keywords": ["media", "streaming", "movies", "music", "tv"],
+    "lib_version": "2.1.60",
+    "lib_version_hash": "4c3f2e1d0b9a8f7e6d5c4b3a29180716253f4e5d6c7b8a9f0e1d2c3b4a596877",
+    "maintainers": [{"email": "dev@ixsystems.com", "name": "truenas", "url": "https://www.truenas.com/"}],
+    "name": "jellyfin",
+    "run_as_context": [
+      {"description": "Jellyfin runs as any non-root user.", "gid": 568, "group_name": "jellyfin", "uid": 568, "user_name": "jellyfin"}
+    ],
+    "screenshots": [
+      "https://media.sys.truenas.net/apps/jellyfin/screenshots/screenshot1.png",
+      "https://media.sys.truenas.net/apps/jellyfin/screenshots/screenshot2.png",
+      "https://media.sys.truenas.net/apps/jellyfin/screenshots/screenshot3.png"
+    ],
+    "sources": ["https://github.com/jellyfin/jellyfin", "https://hub.docker.com/r/jellyfin/jellyfin"],
+    "title": "Jellyfin",
+    "train": "community",
+    "version": "1.3.1"
+  },
+  "notes": "# Welcome to TrueNAS SCALE\n\nThank you for installing Jellyfin App!\n\n## Documentation\n\nDocumentation for Jellyfin App can be found at https://www.truenas.com/docs.\n\n## Bug reports\n\nIf you find a bug in this app, please file an issue at https://ixsystems.atlassian.net or https://github.com/truenas/apps\n\n## Feature requests or improvements\n\nIf you find a feature request for this app, please file an issue at https://ixsystems.atlassian.net or https://github.com/truenas/apps\n",
+  "portals": {"Web UI": "http://0.0.0.0:30013/"},
+  "version_details": null,
+  "config": null
+}

@@ -100,6 +100,13 @@ own `pool.query` call: `id`, `name`, `status`, `healthy`, `warning`, `status_cod
 `pool.scan` (scrub and resilver progress, `POOL_SCRUB_READ`) is small and forwarded as it is:
 `fields` = `{"name": "tank", "scan": {…}}`, the same `scan` object as in `pool.query`.
 
+**`app.query`**: app changes (needs `APPS_READ`). TrueNAS sends the whole app on every change:
+its containers, ports and volumes (`active_workloads`), `portals`, the catalog `metadata` and
+`notes`. The server keeps only the fields the web app selects in its own `app.query` call: `id`,
+`name`, `state`, `upgrade_available`, `image_updates_available`, `custom_app` (the list is
+`FIELDS` in `server/src/truenas/apps.rs`). App ids are strings (the app name). A `removed` event
+has only its `id`.
+
 ## Link and session
 
 - `{"op": "link", "state": "reconnecting"}`: the NAS connection dropped; the server is

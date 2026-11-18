@@ -5,7 +5,9 @@
 //!
 //! Event schema: <https://api.truenas.com/v25.10/api_events_pool.query.html> (role `POOL_READ`).
 
-use serde_json::{Map, Value};
+use serde_json::Value;
+
+use super::reshape::keep_fields;
 
 /// The event name, as the browser subscribes to it.
 pub const EVENT: &str = "pool.query";
@@ -28,12 +30,7 @@ pub const FIELDS: &[&str] = &[
 /// The pool with only [`FIELDS`]; `None` when `fields` is not an object. Keys TrueNAS adds later
 /// are dropped, missing ones stay missing.
 pub fn compact(fields: &Value) -> Option<Value> {
-    let pool = fields.as_object()?;
-    let kept: Map<String, Value> = FIELDS
-        .iter()
-        .filter_map(|&k| pool.get(k).map(|v| (k.to_owned(), v.clone())))
-        .collect();
-    Some(Value::Object(kept))
+    keep_fields(fields, FIELDS)
 }
 
 #[cfg(test)]

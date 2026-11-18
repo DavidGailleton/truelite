@@ -210,6 +210,7 @@ fn reshaper(topic: &str) -> Option<fn(&Value) -> Option<Value>> {
     match topic {
         truenas::realtime::EVENT => Some(truenas::realtime::compact),
         truenas::pools::EVENT => Some(truenas::pools::compact),
+        truenas::apps::EVENT => Some(truenas::apps::compact),
         _ => None,
     }
 }
@@ -764,7 +765,7 @@ mod tests {
             .count();
         assert_eq!(subscribes, 1);
 
-        send(&mut ws, json!({"op": "sub", "topic": "app.query"})).await;
+        send(&mut ws, json!({"op": "sub", "topic": "vm.query"})).await;
         let refused = next(&mut ws).await;
         assert_eq!(
             (
@@ -772,7 +773,7 @@ mod tests {
                 &refused["status"],
                 &refused["error"]["code"]
             ),
-            (&json!("app.query"), &json!("ended"), &json!("not_allowed"))
+            (&json!("vm.query"), &json!("ended"), &json!("not_allowed"))
         );
 
         send(&mut ws, json!({"op": "unsub", "topic": "alert.list"})).await;
@@ -839,6 +840,40 @@ mod tests {
         let got = next(&mut ws).await;
         assert_eq!(got["data"]["kind"], "removed");
         assert_eq!(got["data"]["id"], 1);
+    }
+
+    #[tokio::test]
+    async fn app_changes_arrive_trimmed_and_removals_with_their_id() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        let topic = "app.query";
+        send(&mut ws, json!({"op": "sub", "topic": topic})).await;
+        assert_eq!(
+            next(&mut ws).await,
+            json!({"topic": topic, "status": "subscribed"})
+        );
+        let fixture: Value =
+            serde_json::from_str(include_str!("truenas/testdata/app_event.json")).unwrap();
+        h.mock.push(
+            json!({"jsonrpc": "2.0", "method": "collection_update", "params": {
+            "msg": "changed", "collection": topic, "id": "jellyfin", "fields": fixture.clone()}}),
+        );
+        let got = next(&mut ws).await;
+        assert_eq!(got["data"]["kind"], "changed");
+        assert_eq!(got["data"]["id"], "jellyfin");
+        assert_eq!(
+            got["data"]["fields"],
+            truenas::apps::compact(&fixture).unwrap()
+        );
+        assert!(got["data"]["fields"].get("active_workloads").is_none());
+
+        h.mock.push(
+            json!({"jsonrpc": "2.0", "method": "collection_update", "params": {
+            "msg": "removed", "collection": topic, "id": "jellyfin"}}),
+        );
+        let got = next(&mut ws).await;
+        assert_eq!(got["data"]["kind"], "removed");
+        assert_eq!(got["data"]["id"], "jellyfin");
     }
 
     #[tokio::test]
