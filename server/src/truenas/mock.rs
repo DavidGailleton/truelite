@@ -1,6 +1,8 @@
 //! In-process mock of the TrueNAS JSON-RPC WebSocket server, scripted per test.
-//! Seed of #13: grows login, events and reconnect scenarios from here.
+//! Seed of #13: grows login, events and reconnect scenarios from here. [`fake_nas`] is a
+//! scripted NAS shared by the session tests and the crate's HTTP tests.
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -16,6 +18,8 @@ use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 
+use super::auth::{LoginStep, Secret, login};
+use super::session::{Endpoint, Session, SessionOptions};
 use super::tls::Fingerprint;
 
 #[derive(Debug)]
@@ -319,5 +323,119 @@ fn answer(reply: Reply, id: Value, out: Out) {
         Reply::Drop => {
             let _ = out.send(None);
         }
+    }
+}
+
+/// A scripted NAS: users `admin`/`secret`, `otp`/`secret` + code `123456`, `old` (expired).
+#[derive(Default)]
+pub struct Nas {
+    pub authed: HashSet<usize>,
+    pub otp_pending: HashSet<usize>,
+    pub tokens: Vec<String>,
+    pub reject_tokens: bool,
+    pub subscriptions: usize,
+}
+
+fn user_info(name: &str) -> Value {
+    json!({"pw_name": name, "pw_uid": 1000, "privilege": {
+        "roles": {"$set": ["READONLY_ADMIN"]}, "webui_access": true}})
+}
+
+fn not_authenticated() -> Reply {
+    Reply::Error(
+        json!({"code": -32001, "message": "Method call error", "data": {
+        "error": 207, "errname": "ENOTAUTHENTICATED",
+        "reason": "[ENOTAUTHENTICATED] Not authenticated"}}),
+    )
+}
+
+pub fn fake_nas() -> (
+    Arc<Mutex<Nas>>,
+    impl Fn(usize, &str, &Value) -> Reply + Send + Sync,
+) {
+    let nas = Arc::new(Mutex::new(Nas::default()));
+    let st = nas.clone();
+    let handler = move |conn: usize, method: &str, params: &Value| {
+        let mut nas = st.lock().unwrap();
+        let p = &params[0];
+        let success = |nas: &mut Nas, name: &str, level: &str| {
+            nas.authed.insert(conn);
+            Reply::Result(json!({"response_type": "SUCCESS", "authenticator": level,
+                "user_info": user_info(name)}))
+        };
+        match method {
+            "auth.login_ex" => match (p["mechanism"].as_str(), p["username"].as_str()) {
+                (Some("PASSWORD_PLAIN"), Some(user)) => match (user, p["password"].as_str()) {
+                    ("admin", Some("secret")) => success(&mut nas, "admin", "LEVEL_1"),
+                    ("otp", Some("secret")) => {
+                        nas.otp_pending.insert(conn);
+                        Reply::Result(json!({"response_type": "OTP_REQUIRED", "username": "otp"}))
+                    }
+                    ("old", _) => Reply::Result(json!({"response_type": "EXPIRED"})),
+                    ("elsewhere", _) => {
+                        Reply::Result(json!({"response_type": "REDIRECT", "urls": ["wss://b"]}))
+                    }
+                    _ => Reply::Result(json!({"response_type": "AUTH_ERR"})),
+                },
+                (Some("TOKEN_PLAIN"), _) => {
+                    let ok = !nas.reject_tokens
+                        && p["token"]
+                            .as_str()
+                            .is_some_and(|t| nas.tokens.iter().any(|k| k == t));
+                    if ok {
+                        success(&mut nas, "admin", "LEVEL_1")
+                    } else {
+                        Reply::Result(json!({"response_type": "AUTH_ERR"}))
+                    }
+                }
+                _ => Reply::Error(json!({"code": -32602, "message": "Invalid params"})),
+            },
+            "auth.login_ex_continue" if nas.otp_pending.contains(&conn) => {
+                if p["otp_token"] == "123456" {
+                    nas.otp_pending.remove(&conn);
+                    success(&mut nas, "otp", "LEVEL_2")
+                } else {
+                    Reply::Result(json!({"response_type": "OTP_REQUIRED", "username": "otp"}))
+                }
+            }
+            _ if !nas.authed.contains(&conn) => not_authenticated(),
+            "auth.generate_token" => {
+                let t = format!("tok-{}", nas.tokens.len() + 1);
+                nas.tokens.push(t.clone());
+                Reply::Result(json!(t))
+            }
+            "auth.logout" => {
+                nas.authed.remove(&conn);
+                Reply::Result(Value::Null)
+            }
+            "core.subscribe" if *p == "pool.query" => Reply::Error(
+                json!({"code": -32001, "message": "Method call error", "data": {
+                "error": 13, "errname": "EACCES", "reason": "Not authorized"}}),
+            ),
+            "core.subscribe" => {
+                nas.subscriptions += 1;
+                Reply::Result(json!(format!("sub-{}", nas.subscriptions)))
+            }
+            "core.unsubscribe" => Reply::Result(Value::Null),
+            "fast" => Reply::Result(json!("fast")),
+            "slow" => Reply::Delay(
+                Duration::from_millis(300),
+                Box::new(Reply::Result(json!("slow"))),
+            ),
+            "never" => Reply::Ignore,
+            _ => Reply::Error(json!({"code": -32601, "message": "Method not found"})),
+        }
+    };
+    (nas, handler)
+}
+
+/// A fake NAS ([`fake_nas`]) and a session logged in on it as `admin`.
+pub async fn logged_in(opts: SessionOptions) -> (Mock, Arc<Mutex<Nas>>, Session) {
+    let (nas, handler) = fake_nas();
+    let mock = Mock::start_conn(handler).await;
+    let ep = Endpoint::new(mock.url.clone(), None).unwrap();
+    match within(login(&ep, opts, "admin", Secret::new("secret"))).await {
+        Ok(LoginStep::Done(s)) => (mock, nas, s),
+        other => panic!("login failed: {other:?}"),
     }
 }

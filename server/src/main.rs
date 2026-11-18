@@ -1,18 +1,43 @@
 //! truelite server: serves the web app and (later) bridges it to the TrueNAS API.
 
 mod config;
+// `insert` and `ws_guard` are used by login (#15) and the WebSocket bridge (#16).
+#[allow(dead_code)]
+mod sessions;
 mod static_files;
 // Wired into login (#11) and the WebSocket bridge (#16); only tests use it for now.
 #[allow(dead_code, unused_imports)]
 mod truenas;
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
-use axum::{Json, Router, routing::get};
+use axum::extract::{FromRef, State};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::IntoResponse;
+use axum::routing::{get, post};
+use axum::{Json, Router};
 use serde_json::json;
 use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
+use crate::sessions::{Authed, SessionStore, StoreOptions, clear_cookie, cookie_value};
+use crate::truenas::Link;
+
+/// How long logout waits for the NAS to confirm.
+const LOGOUT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// State shared by every handler.
+#[derive(Clone)]
+pub struct AppState {
+    pub sessions: SessionStore,
+}
+
+impl FromRef<AppState> for SessionStore {
+    fn from_ref(state: &AppState) -> Self {
+        state.sessions.clone()
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -37,7 +62,15 @@ async fn main() {
         None => tracing::info!("no NAS configured (TRUELITE_NAS_URL)"),
     }
 
-    let app = router();
+    let sessions = SessionStore::new(StoreOptions {
+        idle: config.session_idle,
+        max_age: config.session_max_age,
+        ..StoreOptions::default()
+    });
+    sessions.spawn_sweeper();
+    let app = router(AppState {
+        sessions: sessions.clone(),
+    });
     let listener = tokio::net::TcpListener::bind(config.listen)
         .await
         .unwrap_or_else(|e| panic!("cannot bind {}: {e}", config.listen));
@@ -49,16 +82,51 @@ async fn main() {
     .with_graceful_shutdown(shutdown_signal())
     .await
     .expect("server error");
+    sessions.logout_all(LOGOUT_TIMEOUT).await;
 }
 
-pub fn router() -> Router {
+pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
+        .route("/api/session", get(session_info))
+        .route("/api/logout", post(logout))
         .fallback(static_files::serve)
+        .with_state(state)
 }
 
 async fn health() -> Json<serde_json::Value> {
     Json(json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }))
+}
+
+/// Who is logged in, for the web app. 401 when nobody is.
+async fn session_info(Authed { session, .. }: Authed) -> Json<serde_json::Value> {
+    let user = session.user();
+    let link = match *session.link().borrow() {
+        Link::Up => "up",
+        Link::Reconnecting { .. } => "reconnecting",
+        Link::Ended(_) => "ended",
+    };
+    Json(json!({
+        "username": user.username,
+        "roles": user.roles,
+        "two_factor": user.two_factor,
+        "link": link,
+    }))
+}
+
+/// Ends the session, here and on the NAS, and deletes the cookie. Succeeds without a session.
+async fn logout(State(sessions): State<SessionStore>, headers: HeaderMap) -> impl IntoResponse {
+    if let Some(session) = cookie_value(&headers).and_then(|id| sessions.remove(id))
+        && tokio::time::timeout(LOGOUT_TIMEOUT, session.logout())
+            .await
+            .is_err()
+    {
+        tracing::warn!(user = %session.user().username, "NAS logout timed out");
+    }
+    (
+        StatusCode::NO_CONTENT,
+        [(header::SET_COOKIE, clear_cookie())],
+    )
 }
 
 async fn shutdown_signal() {
@@ -81,12 +149,40 @@ async fn shutdown_signal() {
 mod tests {
     use super::*;
     use axum::body::{Body, to_bytes};
-    use axum::http::{Request, StatusCode};
+    use axum::http::{Request, Response, StatusCode};
     use tower::ServiceExt;
+
+    use crate::truenas::SessionOptions;
+    use crate::truenas::mock::logged_in;
+
+    fn test_state() -> AppState {
+        AppState {
+            sessions: SessionStore::new(StoreOptions::default()),
+        }
+    }
+
+    async fn send(state: &AppState, req: Request<Body>) -> Response<Body> {
+        router(state.clone()).oneshot(req).await.unwrap()
+    }
+
+    fn with_cookie(method: &str, uri: &str, id: &str) -> Request<Body> {
+        Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::COOKIE, format!("{}={id}", sessions::COOKIE))
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    fn set_cookie(res: &Response<Body>) -> Option<&str> {
+        res.headers()
+            .get(header::SET_COOKIE)
+            .map(|v| v.to_str().unwrap())
+    }
 
     #[tokio::test]
     async fn health_ok() {
-        let res = router()
+        let res = router(test_state())
             .oneshot(Request::get("/api/health").body(Body::empty()).unwrap())
             .await
             .unwrap();
@@ -97,12 +193,63 @@ mod tests {
 
     #[tokio::test]
     async fn spa_fallback_serves_index() {
-        let res = router()
+        let res = router(test_state())
             .oneshot(Request::get("/apps/some-app").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         let ct = res.headers()["content-type"].to_str().unwrap().to_owned();
         assert!(ct.starts_with("text/html"));
+    }
+
+    #[tokio::test]
+    async fn session_needs_a_live_cookie() {
+        let state = test_state();
+        let res = send(
+            &state,
+            Request::get("/api/session").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(set_cookie(&res), None);
+
+        let res = send(&state, with_cookie("GET", "/api/session", &"a".repeat(64))).await;
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        assert!(set_cookie(&res).unwrap().ends_with("Max-Age=0"));
+    }
+
+    #[tokio::test]
+    async fn session_then_logout() {
+        let (mock, _nas, session) = logged_in(SessionOptions::default()).await;
+        let state = test_state();
+        let id = state.sessions.insert(session).unwrap();
+
+        let res = send(&state, with_cookie("GET", "/api/session", id.as_str())).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = to_bytes(res.into_body(), 4096).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["username"], "admin");
+        assert_eq!(body["roles"], json!(["READONLY_ADMIN"]));
+        assert_eq!(body["link"], "up");
+
+        let res = send(&state, with_cookie("POST", "/api/logout", id.as_str())).await;
+        assert_eq!(res.status(), StatusCode::NO_CONTENT);
+        assert!(set_cookie(&res).unwrap().ends_with("Max-Age=0"));
+        assert!(mock.calls().iter().any(|(_, m)| m == "auth.logout"));
+
+        let res = send(&state, with_cookie("GET", "/api/session", id.as_str())).await;
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        // Logging out twice, or without a session, is fine.
+        let res = send(&state, with_cookie("POST", "/api/logout", id.as_str())).await;
+        assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn unknown_api_paths_are_404() {
+        let res = router(test_state())
+            .oneshot(Request::get("/api/nope").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 }
