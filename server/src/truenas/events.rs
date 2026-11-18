@@ -78,6 +78,7 @@ pub struct Subscription {
 
 impl Subscription {
     /// The event name, as given to [`Session::subscribe`](super::Session::subscribe).
+    #[cfg(test)]
     pub fn name(&self) -> &str {
         &self.name
     }

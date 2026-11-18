@@ -6,7 +6,7 @@
 
 use std::fmt;
 use std::future::Future;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::de::DeserializeOwned;
@@ -134,7 +134,9 @@ struct Shared {
     client: watch::Receiver<Option<Client>>,
     cmds: mpsc::Sender<Cmd>,
     call_timeout: Duration,
-    notifications: Mutex<Option<mpsc::Receiver<Notification>>>,
+    /// Notifications that are no subscribed event; only tests read them.
+    #[cfg(test)]
+    notifications: std::sync::Mutex<Option<mpsc::Receiver<Notification>>>,
 }
 
 impl fmt::Debug for Session {
@@ -159,6 +161,7 @@ impl Session {
         let (link_tx, link_rx) = watch::channel(Link::Up);
         let (client_tx, client_rx) = watch::channel(Some(client.clone()));
         let (cmd_tx, cmd_rx) = mpsc::channel(8);
+        #[cfg(test)]
         let (out_tx, out_rx) = mpsc::channel(opts.client.notification_buffer.max(1));
         let call_timeout = opts.client.call_timeout;
         let (release_tx, releases) = mpsc::unbounded_channel();
@@ -171,6 +174,7 @@ impl Session {
             link: link_tx,
             client: client_tx,
             cmds: cmd_rx,
+            #[cfg(test)]
             out: out_tx,
             topics,
             releases,
@@ -184,7 +188,8 @@ impl Session {
                 client: client_rx,
                 cmds: cmd_tx,
                 call_timeout,
-                notifications: Mutex::new(Some(out_rx)),
+                #[cfg(test)]
+                notifications: std::sync::Mutex::new(Some(out_rx)),
             }),
         })
     }
@@ -199,7 +204,9 @@ impl Session {
     }
 
     /// The session's notifications that are not events of a [`Subscription`], across
-    /// reconnects. Only the first caller gets them.
+    /// reconnects. Only the first caller gets them. Test-only: production code has no reader, so
+    /// other builds drop these notifications.
+    #[cfg(test)]
     pub fn take_notifications(&self) -> Option<mpsc::Receiver<Notification>> {
         self.inner
             .notifications
@@ -337,6 +344,8 @@ struct Supervisor {
     link: watch::Sender<Link>,
     client: watch::Sender<Option<Client>>,
     cmds: mpsc::Receiver<Cmd>,
+    /// Feeds [`Session::take_notifications`].
+    #[cfg(test)]
     out: mpsc::Sender<Notification>,
     topics: Topics,
     releases: mpsc::UnboundedReceiver<Release>,
@@ -404,7 +413,7 @@ impl Supervisor {
         }
     }
 
-    /// Passes on a notification: to its topic, else to [`Session::take_notifications`]. Reports
+    /// Passes on a notification to its topic, else to [`Supervisor::leftover`]. Reports
     /// notifications the client dropped first, so every topic knows it has a gap.
     fn deliver(&mut self, client: &Client, n: Notification) {
         let lost = client.take_lost();
@@ -412,9 +421,22 @@ impl Supervisor {
             tracing::warn!(lost, "NAS notifications were dropped; topics query again");
             self.topics.missed_all(lost);
         }
-        let Some(n) = self.topics.dispatch(n) else {
-            return;
-        };
+        if let Some(n) = self.topics.dispatch(n) {
+            self.leftover(n);
+        }
+    }
+
+    /// Handles a notification that is no subscribed event. Nothing reads these in production,
+    /// so they are dropped.
+    #[cfg(not(test))]
+    fn leftover(&mut self, n: Notification) {
+        tracing::debug!(method = %n.method, "dropping NAS notification with no subscriber");
+    }
+
+    /// Handles a notification that is no subscribed event: queues it for
+    /// [`Session::take_notifications`].
+    #[cfg(test)]
+    fn leftover(&mut self, n: Notification) {
         if let Err(mpsc::error::TrySendError::Full(n)) = self.out.try_send(n) {
             tracing::warn!("session notification buffer full, dropping {}", n.method);
         }
@@ -623,6 +645,7 @@ mod tests {
     use super::super::events::{Event, Update, UpdateKind};
     use super::super::mock::{Mock, Nas, fake_nas, within};
     use super::*;
+    use std::sync::Mutex;
 
     fn opts() -> SessionOptions {
         SessionOptions {

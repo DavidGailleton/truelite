@@ -39,7 +39,6 @@ impl fmt::Debug for Secret {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserInfo {
     pub username: String,
-    pub uid: i64,
     /// Logged in with a one-time code (`authenticator: LEVEL_2`).
     pub two_factor: bool,
     /// Every role the user holds, already expanded by TrueNAS (`FULL_ADMIN`, `POOL_READ`, …).
@@ -49,6 +48,7 @@ pub struct UserInfo {
 }
 
 impl UserInfo {
+    #[cfg(test)]
     pub fn has_role(&self, role: &str) -> bool {
         self.roles.iter().any(|r| r == role)
     }
@@ -220,7 +220,6 @@ impl LoginResponse {
 #[derive(Deserialize)]
 pub(super) struct RawUserInfo {
     pw_name: String,
-    pw_uid: i64,
     #[serde(default)]
     privilege: Option<RawPrivilege>,
 }
@@ -269,7 +268,6 @@ impl RawUserInfo {
         roles.sort_unstable();
         UserInfo {
             username: self.pw_name,
-            uid: self.pw_uid,
             two_factor,
             roles,
             webui_access,
@@ -310,7 +308,6 @@ mod tests {
             .unwrap()
             .into_user(authenticator.as_deref() == Some("LEVEL_2"));
         assert_eq!(user.username, "truenas_admin");
-        assert_eq!(user.uid, 950);
         assert!(!user.two_factor);
         assert!(user.webui_access);
         assert_eq!(user.roles, ["FULL_ADMIN", "READONLY_ADMIN"]);
