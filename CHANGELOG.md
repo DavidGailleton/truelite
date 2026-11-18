@@ -2,6 +2,18 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.12.0 — 2026-11-18
+
+### Features
+
+- **web:** System info card and dashboard header
+- **server:** Allow pool queries and reshape pool events
+- **web:** Pool health and usage card on the dashboard
+- **server:** Allow app queries and reshape app events
+- **web:** Apps summary card on the dashboard
+- **server:** Reshape alert.list events and results
+- **web:** Alerts card with live updates, attention first
+
 ## v0.11.0 — 2026-11-18
 
 ### Features
