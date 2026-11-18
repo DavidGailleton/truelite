@@ -3,9 +3,12 @@
 	// useAlerts(); this renders the state. Messages are plain text, never HTML.
 	import { ago, summarizeAlerts, TONE_LABEL, type Tone } from '#lib/alerts.js';
 	import { alerts } from '#lib/alerts.svelte.js';
+	import { badgeLabel, cardView } from '#lib/card-state.js';
 	import type { IconName } from '#lib/icons.js';
 	import { connection, pageVisible } from '#lib/nas.svelte.js';
 	import Card from './Card.svelte';
+	import CardBadge from './CardBadge.svelte';
+	import CardNotice from './CardNotice.svelte';
 	import Icon from './Icon.svelte';
 
 	let { onretry }: { onretry: () => void } = $props();
@@ -22,9 +25,14 @@
 
 	const list = $derived(alerts.list);
 	const summary = $derived(list ? summarizeAlerts(list) : null);
-	const failure = $derived(alerts.error);
-	const denied = $derived(failure?.code === 'nas' && failure.errname === 'EACCES');
-	const paused = $derived(connection.status !== 'up');
+	const view = $derived(
+		cardView({
+			hasData: summary !== null,
+			isEmpty: summary?.active.length === 0,
+			error: alerts.error,
+			status: connection.status
+		})
+	);
 
 	let showAll = $state(false);
 	const shown = $derived(
@@ -48,33 +56,34 @@
 </script>
 
 {#snippet headerControl()}
-	{#if paused && list}
-		<span class="paused">Paused</span>
+	{#if badgeLabel(view)}
+		<CardBadge {view} />
 	{:else if summary}
 		<span class="count" role="status">{countLabel}</span>
 	{/if}
 {/snippet}
 
 <Card title="Alerts" icon="bell" control={headerControl}>
-	{#if denied}
-		<p class="context">
-			Your account can't see alerts. It needs read-only admin access on the NAS.
-		</p>
-	{:else if failure && !list}
-		<p class="context">Alerts didn't load: {failure.message}</p>
-		<div><button type="button" class="outline" onclick={onretry}>Try again</button></div>
-	{:else if summary && summary.active.length === 0}
-		<p class="all-clear">
-			<span class="ok-icon"><Icon name="circle-check" size={16} /></span>
-			No alerts. Everything looks fine.
-		</p>
-		{#if summary.dismissed > 0}
-			<p class="context">
-				{summary.dismissed} dismissed {summary.dismissed === 1 ? 'alert' : 'alerts'} hidden.
+	<CardNotice
+		{view}
+		what="Alerts"
+		denied="Your account can't see alerts. It needs read-only admin access on the NAS."
+		{onretry}
+	/>
+	{#if view.kind === 'empty' && summary}
+		<div class={['body', { dim: view.paused || view.stale }]}>
+			<p class="all-clear">
+				<span class="ok-icon"><Icon name="circle-check" size={16} /></span>
+				No alerts. Everything looks fine.
 			</p>
-		{/if}
-	{:else if summary}
-		<div class={['body', { dim: paused }]}>
+			{#if summary.dismissed > 0}
+				<p class="context">
+					{summary.dismissed} dismissed {summary.dismissed === 1 ? 'alert' : 'alerts'} hidden.
+				</p>
+			{/if}
+		</div>
+	{:else if view.kind === 'ready' && summary}
+		<div class={['body', { dim: view.paused || view.stale }]}>
 			<ul class="alerts">
 				{#each shown as alert (alert.uuid)}
 					<li class={['alert', alert.tone]}>
@@ -95,7 +104,7 @@
 			</ul>
 			{#if summary.active.length > FIRST}
 				<div>
-					<button type="button" class="outline" onclick={() => (showAll = !showAll)}>
+					<button type="button" class="button-outline" onclick={() => (showAll = !showAll)}>
 						{showAll ? 'Show fewer' : `Show all ${summary.active.length}`}
 					</button>
 				</div>
@@ -106,7 +115,7 @@
 				</p>
 			{/if}
 		</div>
-	{:else}
+	{:else if view.kind === 'loading'}
 		<div class="alerts" aria-hidden="true">
 			{#each [0, 1] as i (i)}
 				<span class="skeleton row"></span>
@@ -131,7 +140,6 @@
 	.dim {
 		opacity: 0.5;
 	}
-	.paused,
 	.count {
 		padding: 0 var(--space-2);
 		border-radius: var(--radius-full);
@@ -206,26 +214,5 @@
 	.skeleton.row {
 		display: block;
 		height: 3.5rem;
-	}
-
-	button.outline {
-		height: 2.25rem;
-		padding: 0 var(--space-3);
-		border: 1px solid var(--border-secondary);
-		border-radius: var(--radius-md);
-		background: transparent;
-		color: var(--text-primary);
-		font: inherit;
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		cursor: pointer;
-	}
-	button.outline:hover {
-		background: var(--surface-hover);
-	}
-	@media (pointer: coarse) {
-		button.outline {
-			height: var(--touch);
-		}
 	}
 </style>

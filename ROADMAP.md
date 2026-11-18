@@ -48,7 +48,7 @@ Done when the dashboard works on a phone at 360 px with live data and no polling
 - [x] #25 Pool health and usage bars
 - [x] #26 Apps summary card
 - [x] #27 Alerts list with live updates, attention first
-- [ ] #28 Loading skeletons, empty and error states
+- [x] #28 Loading skeletons, empty and error states
 - [ ] #29 Light/dark theme toggle
 
 ## Phase 4 — Apps

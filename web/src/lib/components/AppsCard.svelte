@@ -3,32 +3,39 @@
 	// dashboard calls useApps(); this renders the state.
 	import { summarize } from '#lib/apps.js';
 	import { apps } from '#lib/apps.svelte.js';
+	import { cardView } from '#lib/card-state.js';
 	import { connection } from '#lib/nas.svelte.js';
 	import Card from './Card.svelte';
+	import CardBadge from './CardBadge.svelte';
+	import CardNotice from './CardNotice.svelte';
 
 	let { onretry }: { onretry: () => void } = $props();
 
 	const list = $derived(apps.list);
 	const summary = $derived(list ? summarize(list) : null);
-	const failure = $derived(apps.error);
-	const denied = $derived(failure?.code === 'nas' && failure.errname === 'EACCES');
-	const paused = $derived(connection.status !== 'up');
+	const view = $derived(
+		cardView({
+			hasData: list !== null,
+			isEmpty: list?.length === 0,
+			error: apps.error,
+			status: connection.status
+		})
+	);
 </script>
 
-{#snippet pausedBadge()}
-	{#if paused && list}<span class="paused">Paused</span>{/if}
-{/snippet}
+{#snippet badge()}<CardBadge {view} />{/snippet}
 
-<Card title="Apps" icon="box" control={pausedBadge}>
-	{#if denied}
-		<p class="context">Your account can't see apps. It needs read-only admin access on the NAS.</p>
-	{:else if failure && !list}
-		<p class="context">Apps didn't load: {failure.message}</p>
-		<div><button type="button" class="outline" onclick={onretry}>Try again</button></div>
-	{:else if list && list.length === 0}
-		<p class="context">No apps installed yet.</p>
-	{:else if summary}
-		<div class={['body', { dim: paused }]}>
+<Card title="Apps" icon="box" control={badge}>
+	<CardNotice
+		{view}
+		what="Apps"
+		denied="Your account can't see apps. It needs read-only admin access on the NAS."
+		{onretry}
+	/>
+	{#if view.kind === 'empty'}
+		<p class="context">No apps installed yet. Install one in the TrueNAS web interface.</p>
+	{:else if view.kind === 'ready' && summary}
+		<div class={['body', { dim: view.paused || view.stale }]}>
 			<dl class="stats">
 				<div>
 					<dt>Running</dt>
@@ -60,7 +67,7 @@
 				</p>
 			{/if}
 		</div>
-	{:else}
+	{:else if view.kind === 'loading'}
 		<div class="stats" aria-hidden="true">
 			{#each [0, 1, 2] as i (i)}
 				<div>
@@ -87,13 +94,6 @@
 	}
 	.dim {
 		opacity: 0.5;
-	}
-	.paused {
-		padding: 0 var(--space-2);
-		border-radius: var(--radius-full);
-		background: var(--surface-inset);
-		color: var(--text-secondary);
-		font-size: var(--text-xs);
 	}
 
 	.stats {
@@ -159,35 +159,9 @@
 		background: currentColor;
 	}
 
-	.skeleton.line {
-		display: block;
-		max-width: 100%;
-		height: 1rem;
-	}
 	.skeleton.number {
 		display: block;
 		width: 2rem;
 		height: 1.75rem;
-	}
-
-	button.outline {
-		height: 2.25rem;
-		padding: 0 var(--space-3);
-		border: 1px solid var(--border-secondary);
-		border-radius: var(--radius-md);
-		background: transparent;
-		color: var(--text-primary);
-		font: inherit;
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		cursor: pointer;
-	}
-	button.outline:hover {
-		background: var(--surface-hover);
-	}
-	@media (pointer: coarse) {
-		button.outline {
-			height: var(--touch);
-		}
 	}
 </style>

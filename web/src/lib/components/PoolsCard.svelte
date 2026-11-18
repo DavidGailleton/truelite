@@ -1,38 +1,45 @@
 <script lang="ts">
 	// Storage card: one row per pool, worst first, with its status in words and colour, a usage
 	// bar and the scrub/resilver line. The dashboard calls usePools(); this renders the state.
+	import { cardView } from '#lib/card-state.js';
 	import { connection } from '#lib/nas.svelte.js';
 	import { FULL_CRITICAL, FULL_WARNING, poolRows } from '#lib/pools.js';
 	import { pools } from '#lib/pools.svelte.js';
 	import { formatBytes, formatPercent } from '#lib/realtime.js';
 	import Card from './Card.svelte';
+	import CardBadge from './CardBadge.svelte';
+	import CardNotice from './CardNotice.svelte';
 
 	let { onretry }: { onretry: () => void } = $props();
 
 	const list = $derived(pools.list);
 	const rows = $derived(list ? poolRows(list, pools.usage, Date.now()) : []);
-	const failure = $derived(pools.error);
-	const denied = $derived(failure?.code === 'nas' && failure.errname === 'EACCES');
-	const paused = $derived(connection.status !== 'up');
+	const view = $derived(
+		cardView({
+			hasData: list !== null,
+			isEmpty: rows.length === 0,
+			error: pools.error,
+			status: connection.status
+		})
+	);
 
 	const fill = (percent: number) =>
 		percent >= FULL_CRITICAL ? 'critical' : percent >= FULL_WARNING ? 'warning' : 'ok';
 </script>
 
-{#snippet pausedBadge()}
-	{#if paused && list}<span class="paused">Paused</span>{/if}
-{/snippet}
+{#snippet badge()}<CardBadge {view} />{/snippet}
 
-<Card title="Storage" icon="hard-drive" control={pausedBadge}>
-	{#if denied}
-		<p class="context">Your account can't see pools. It needs read-only admin access on the NAS.</p>
-	{:else if failure && !list}
-		<p class="context">Pools didn't load: {failure.message}</p>
-		<div><button type="button" class="outline" onclick={onretry}>Try again</button></div>
-	{:else if list && rows.length === 0}
+<Card title="Storage" icon="hard-drive" control={badge}>
+	<CardNotice
+		{view}
+		what="Pools"
+		denied="Your account can't see pools. It needs read-only admin access on the NAS."
+		{onretry}
+	/>
+	{#if view.kind === 'empty'}
 		<p class="context">No pools yet. Create one in the TrueNAS web interface.</p>
-	{:else if list}
-		<ul class={['pools', { dim: paused }]}>
+	{:else if view.kind === 'ready'}
+		<ul class={['pools', { dim: view.paused || view.stale }]}>
 			{#each rows as row (row.id)}
 				<li>
 					<div class="head">
@@ -63,7 +70,7 @@
 				</li>
 			{/each}
 		</ul>
-	{:else}
+	{:else if view.kind === 'loading'}
 		<ul class="pools" aria-hidden="true">
 			{#each [0, 1] as i (i)}
 				<li>
@@ -90,13 +97,6 @@
 	}
 	.dim {
 		opacity: 0.5;
-	}
-	.paused {
-		padding: 0 var(--space-2);
-		border-radius: var(--radius-full);
-		background: var(--surface-inset);
-		color: var(--text-secondary);
-		font-size: var(--text-xs);
 	}
 
 	.pools {
@@ -169,33 +169,7 @@
 		background: var(--destructive);
 	}
 
-	.skeleton.line {
-		display: block;
-		max-width: 100%;
-		height: 1rem;
-	}
 	.skeleton.bar {
 		display: block;
-	}
-
-	button.outline {
-		height: 2.25rem;
-		padding: 0 var(--space-3);
-		border: 1px solid var(--border-secondary);
-		border-radius: var(--radius-md);
-		background: transparent;
-		color: var(--text-primary);
-		font: inherit;
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		cursor: pointer;
-	}
-	button.outline:hover {
-		background: var(--surface-hover);
-	}
-	@media (pointer: coarse) {
-		button.outline {
-			height: var(--touch);
-		}
 	}
 </style>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Live CPU, memory and network cards, fed by the `reporting.realtime` topic (one sample every
 	// 2 s, reshaped by the server). Renders three cards side by side in the parent's grid.
+	import { cardView } from '#lib/card-state.js';
 	import { connection, useTopic } from '#lib/nas.svelte.js';
 	import {
 		REALTIME_TOPIC,
@@ -15,6 +16,8 @@
 	} from '#lib/realtime.js';
 	import type { ErrorBody, TopicMessage } from '#lib/ws.js';
 	import Card from './Card.svelte';
+	import CardBadge from './CardBadge.svelte';
+	import CardNotice from './CardNotice.svelte';
 	import Sparkline from './Sparkline.svelte';
 
 	const IFACE_KEY = 'truelite.net-iface';
@@ -58,8 +61,11 @@
 	const topic = useTopic(REALTIME_TOPIC, onMessage, { whenVisible: true });
 
 	const latest = $derived(history.at(-1));
-	const paused = $derived(connection.status !== 'up');
-	const denied = $derived(failure?.code === 'nas' && failure.errname === 'EACCES');
+	// After the stream ends the last samples stay up, dimmed, with the notice on the CPU card.
+	const view = $derived(
+		cardView({ hasData: latest !== undefined, error: failure, status: connection.status })
+	);
+	const dim = $derived(view.kind === 'ready' && (view.paused || view.stale !== null));
 
 	const cpu = $derived(history.map((s) => s.cpu));
 
@@ -91,9 +97,7 @@
 	}
 </script>
 
-{#snippet pausedBadge()}
-	{#if paused && latest}<span class="badge">Paused</span>{/if}
-{/snippet}
+{#snippet badge()}<CardBadge {view} />{/snippet}
 
 {#snippet skeleton()}
 	<div class="skeleton big" aria-hidden="true"></div>
@@ -102,21 +106,22 @@
 	<p class="visually-hidden">Loading live statistics…</p>
 {/snippet}
 
-{#if failure}
-	<Card title="Live statistics" icon="cpu">
-		{#if denied}
-			<p class="context">
-				Your account can't see live statistics. It needs the Reporting read role on the NAS.
-			</p>
-		{:else}
-			<p class="context">Live statistics stopped: {failure.message}</p>
-			<div><button type="button" class="outline" onclick={topic.retry}>Try again</button></div>
-		{/if}
-	</Card>
+{#snippet notice()}
+	<CardNotice
+		{view}
+		what="Live statistics"
+		denied="Your account can't see live statistics. It needs the Reporting read role on the NAS."
+		onretry={topic.retry}
+	/>
+{/snippet}
+
+{#if view.kind === 'denied' || view.kind === 'error'}
+	<Card title="Live statistics" icon="cpu">{@render notice()}</Card>
 {:else}
-	<Card title="CPU" icon="cpu" control={pausedBadge}>
+	<Card title="CPU" icon="cpu" control={badge}>
+		{@render notice()}
 		{#if latest}
-			<div class:dim={paused}>
+			<div class={{ dim }}>
 				<p class="big">{formatPercent(latest.cpu)}</p>
 				<p class="context">
 					{latest.temp === null ? 'Usage' : `Usage · ${Math.round(latest.temp)} °C`}
@@ -132,9 +137,9 @@
 		{/if}
 	</Card>
 
-	<Card title="Memory" icon="memory-stick" control={pausedBadge}>
+	<Card title="Memory" icon="memory-stick" control={badge}>
 		{#if latest && mem && mem.total > 0}
-			<div class:dim={paused}>
+			<div class={{ dim }}>
 				<p class="big">{formatBytes(mem.services)}</p>
 				<p class="context">used by services, of {formatBytes(mem.total)}</p>
 			</div>
@@ -159,7 +164,7 @@
 
 	<Card title="Network" icon="network">
 		{#snippet control()}
-			{@render pausedBadge()}
+			{@render badge()}
 			{#if ifaces.length > 1 && iface}
 				<label class="visually-hidden" for="net-iface">Interface</label>
 				<select id="net-iface" value={iface} onchange={(e) => choose(e.currentTarget.value)}>
@@ -168,7 +173,7 @@
 			{/if}
 		{/snippet}
 		{#if latest && iface && net}
-			<div class:dim={paused}>
+			<div class={{ dim }}>
 				<p class="big">
 					<span><span class="arrow" aria-hidden="true">↓</span>{formatRate(net.rx)}</span>
 					<span><span class="arrow" aria-hidden="true">↑</span>{formatRate(net.tx)}</span>
@@ -224,13 +229,6 @@
 	.dim {
 		opacity: 0.5;
 	}
-	.badge {
-		padding: 0 var(--space-2);
-		border-radius: var(--radius-full);
-		background: var(--surface-inset);
-		color: var(--text-secondary);
-		font-size: var(--text-xs);
-	}
 
 	.skeleton.big {
 		width: 6rem;
@@ -238,7 +236,6 @@
 	}
 	.skeleton.line {
 		width: 10rem;
-		height: 1rem;
 	}
 	.skeleton.chart {
 		height: 3rem;
@@ -300,24 +297,8 @@
 		font: inherit;
 		font-size: var(--text-xs);
 	}
-	button.outline {
-		height: 2.25rem;
-		padding: 0 var(--space-3);
-		border: 1px solid var(--border-secondary);
-		border-radius: var(--radius-md);
-		background: transparent;
-		color: var(--text-primary);
-		font: inherit;
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		cursor: pointer;
-	}
-	button.outline:hover {
-		background: var(--surface-hover);
-	}
 	@media (pointer: coarse) {
-		select,
-		button.outline {
+		select {
 			height: var(--touch);
 		}
 	}

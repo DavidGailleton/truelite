@@ -41,7 +41,7 @@
 	);
 </script>
 
-<PageHeader title={info?.hostname ?? 'Dashboard'} {subtitle} />
+<PageHeader title={info?.hostname ?? 'Dashboard'} {subtitle} loading={!info && !system.error} />
 
 <div class="grid">
 	{#if alertTrouble}

@@ -1,8 +1,18 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
-	let { title, subtitle, actions }: { title: string; subtitle?: string; actions?: Snippet } =
-		$props();
+	let {
+		title,
+		subtitle,
+		loading = false,
+		actions
+	}: {
+		title: string;
+		subtitle?: string;
+		/** Hold the subtitle's place with a skeleton until it arrives (no layout jump). */
+		loading?: boolean;
+		actions?: Snippet;
+	} = $props();
 </script>
 
 <svelte:head>
@@ -12,7 +22,11 @@
 <header class="page-header">
 	<div class="text">
 		<h1>{title}</h1>
-		{#if subtitle}<p>{subtitle}</p>{/if}
+		{#if subtitle}
+			<p>{subtitle}</p>
+		{:else if loading}
+			<p aria-hidden="true"><span class="skeleton line"></span></p>
+		{/if}
 	</div>
 	{#if actions}<div class="actions">{@render actions()}</div>{/if}
 </header>
@@ -37,6 +51,10 @@
 	p {
 		margin: var(--space-1) 0 0;
 		color: var(--text-secondary);
+	}
+	.skeleton.line {
+		width: 12rem;
+		height: 1lh;
 	}
 	.actions {
 		display: flex;

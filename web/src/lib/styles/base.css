@@ -67,6 +67,11 @@ button {
 	background: var(--surface-inset);
 	animation: skeleton-pulse 1.5s ease-in-out infinite;
 }
+.skeleton.line {
+	display: block;
+	max-width: 100%;
+	height: 1rem;
+}
 @keyframes skeleton-pulse {
 	50% {
 		opacity: 0.5;
@@ -80,5 +85,27 @@ button {
 		animation-duration: 0.01ms !important;
 		animation-iteration-count: 1 !important;
 		transition-duration: 0.01ms !important;
+	}
+}
+
+/* Secondary button: hairline border, no fill (ui-style §6). */
+.button-outline {
+	height: 2.25rem;
+	padding: 0 var(--space-3);
+	border: 1px solid var(--border-secondary);
+	border-radius: var(--radius-md);
+	background: transparent;
+	color: var(--text-primary);
+	font: inherit;
+	font-size: var(--text-sm);
+	font-weight: var(--weight-medium);
+	cursor: pointer;
+}
+.button-outline:hover {
+	background: var(--surface-hover);
+}
+@media (pointer: coarse) {
+	.button-outline {
+		height: var(--touch);
 	}
 }
