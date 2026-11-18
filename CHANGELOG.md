@@ -2,6 +2,17 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.5.0 — 2026-11-18
+
+### Features
+
+- **server:** Sessions with a secure cookie, idle timeout and logout
+- **server:** Login endpoint with one-time codes and a rate limit
+
+### Tests
+
+- **server:** Keep the refused port reserved in connect_refused
+
 ## v0.3.0 — 2026-11-18
 
 ### Features
