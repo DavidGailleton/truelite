@@ -2,6 +2,26 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.15.1 — 2026-11-18
+
+### Fixes
+
+- **server:** Stop queueing NAS notifications nobody reads
+
+### Performance
+
+- **server:** Reshape NAS events once and without deep clones
+- **server:** Serve precompressed static files with ETags
+
+### Refactoring
+
+- **server:** Merge duplicated helpers
+- **server:** Idiomatic errors, link state and helpers
+
+### Documentation
+
+- **roadmap:** Add the server review (#55)
+
 ## v0.15.0 — 2026-11-18
 
 ### Features
