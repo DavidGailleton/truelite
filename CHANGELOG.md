@@ -2,6 +2,17 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.2.0 — 2026-11-18
+
+### Features
+
+- **server:** TrueNAS JSON-RPC client with id matching and API pin
+- **server:** Pin the NAS TLS certificate fingerprint
+
+### Tests
+
+- **server:** Opt-in smoke test of the pinned TLS connection to a real NAS
+
 ## v0.1.1 — 2026-11-17
 
 ### Documentation
