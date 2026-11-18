@@ -1,6 +1,7 @@
 <script lang="ts">
-	// One-click light/dark switch, fixed in the top-right corner of every page (rendered once by
-	// AppShell and by /login). "System" stays in the Account menu.
+	// One-click light/dark switch in the top-right corner of every page (rendered once by AppShell
+	// and by /login). Phone: scrolls away with the page header. Desktop: fixed, always visible like
+	// the rail. "System" stays in the Account menu.
 	import { MediaQuery } from 'svelte/reactivity';
 	import { resolveTheme, toggledTheme } from '#lib/theme.js';
 	import { setTheme, theme } from '#lib/theme.svelte.js';
@@ -24,7 +25,8 @@
 
 <style>
 	.theme-toggle {
-		position: fixed;
+		/* Absolute to the page, so on a phone it scrolls away with the header. */
+		position: absolute;
 		top: max(var(--space-3), env(safe-area-inset-top));
 		right: max(var(--space-3), env(safe-area-inset-right));
 		z-index: 25; /* over the page and the reconnect banner (z 10); the nav (z 20) never reaches this corner */
@@ -46,5 +48,10 @@
 	.theme-toggle:hover {
 		background: var(--container-hover);
 		color: var(--text-primary);
+	}
+	@media (min-width: 1024px) {
+		.theme-toggle {
+			position: fixed;
+		}
 	}
 </style>
