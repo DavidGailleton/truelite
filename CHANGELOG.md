@@ -2,6 +2,20 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.9.0 — 2026-11-18
+
+### Features
+
+- **web:** Design tokens and app shell with icon rail and bottom tabs
+
+### Performance
+
+- **server:** Tune the release profile (opt-level s, fat LTO, 1 codegen unit, strip)
+
+### Other
+
+- Tick release profile tuning in the roadmap
+
 ## v0.8.1 — 2026-11-18
 
 ### Tests
