@@ -100,6 +100,17 @@ pub enum Link {
     Ended(EndReason),
 }
 
+impl Link {
+    /// The link state as the web app names it: `up`, `reconnecting` or `ended`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Link::Up => "up",
+            Link::Reconnecting { .. } => "reconnecting",
+            Link::Ended(_) => "ended",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndReason {
     /// [`Session::logout`] was called.

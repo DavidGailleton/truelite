@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use axum::Json;
@@ -27,6 +27,8 @@ use crate::truenas::{self, Link};
 
 /// Cookie name. `__Host-` makes browsers require `Secure`, `Path=/` and no `Domain`.
 pub const COOKIE: &str = "__Host-truelite";
+/// How long a logout waits for the NAS to confirm.
+pub const LOGOUT_TIMEOUT: Duration = Duration::from_secs(5);
 const ID_BYTES: usize = 32;
 const ID_LEN: usize = ID_BYTES * 2;
 
@@ -308,15 +310,7 @@ impl SessionStore {
     /// Sweeps every [`StoreOptions::sweep_every`] until the runtime stops.
     pub fn spawn_sweeper(&self) -> JoinHandle<()> {
         let store = self.clone();
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(store.inner.opts.sweep_every);
-            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-            tick.tick().await;
-            loop {
-                tick.tick().await;
-                store.sweep_at(Instant::now());
-            }
-        })
+        spawn_every(self.inner.opts.sweep_every, move |now| store.sweep_at(now))
     }
 
     /// Ends every session and waits up to `timeout` for the NAS logouts (server shutdown).
@@ -350,15 +344,30 @@ fn take_expired(
     opts: &StoreOptions,
     out: &mut Vec<(truenas::Session, End)>,
 ) {
-    let expired: Vec<(Key, End)> = map
-        .iter()
-        .filter_map(|(k, e)| e.expiry(now, opts).map(|why| (*k, why)))
+    // `extract_if` yields entries in the order the predicate accepts them, so the reasons line up.
+    let mut reasons = Vec::new();
+    let taken: Vec<_> = map
+        .extract_if(|_, e| {
+            e.expiry(now, opts)
+                .inspect(|&why| reasons.push(why))
+                .is_some()
+        })
         .collect();
-    for (k, why) in expired {
-        if let Some(e) = map.remove(&k) {
-            out.push((e.session, why));
+    out.extend(taken.into_iter().map(|(_, e)| e.session).zip(reasons));
+}
+
+/// Calls `f` with the current time every `every` (the first call after one period) until the
+/// runtime stops. Late ticks are delayed, not bunched.
+pub fn spawn_every(every: Duration, f: impl Fn(Instant) + Send + 'static) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(every);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        tick.tick().await;
+        loop {
+            tick.tick().await;
+            f(Instant::now());
         }
-    }
+    })
 }
 
 /// An open browser WebSocket on a session; see [`SessionStore::ws_guard`].
@@ -376,22 +385,26 @@ impl Drop for WsGuard {
     }
 }
 
+/// `Set-Cookie` value that stores `value` in the cookie `name` for `max_age` (zero deletes it).
+/// Every cookie truelite sets is host-only, HTTP-only, secure and same-site strict.
+pub fn cookie(name: &str, value: &str, max_age: Duration) -> HeaderValue {
+    HeaderValue::from_str(&format!(
+        "{name}={value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={}",
+        max_age.as_secs()
+    ))
+    .expect("cookie names and hex values are valid header values")
+}
+
 /// `Set-Cookie` value that stores `id` for `max_age`. The server enforces the lifetime anyway;
 /// `Max-Age` only lets the cookie survive a browser or PWA restart.
 pub fn set_cookie(id: &SessionId, max_age: Duration) -> HeaderValue {
-    HeaderValue::from_str(&format!(
-        "{COOKIE}={}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={}",
-        id.as_str(),
-        max_age.as_secs()
-    ))
-    .expect("hex ids are valid header values")
+    cookie(COOKIE, id.as_str(), max_age)
 }
 
 /// `Set-Cookie` value that deletes the session cookie.
 pub fn clear_cookie() -> HeaderValue {
-    HeaderValue::from_static(
-        "__Host-truelite=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0",
-    )
+    static CLEAR: LazyLock<HeaderValue> = LazyLock::new(|| cookie(COOKIE, "", Duration::ZERO));
+    CLEAR.clone()
 }
 
 /// The session cookie's value, from any of the request's `Cookie` headers.
@@ -415,11 +428,7 @@ pub fn named_cookie<'h>(headers: &'h HeaderMap, name: &str) -> Option<&'h str> {
 /// What the web app learns about a session (`GET /api/session` and a successful login).
 pub fn session_json(session: &truenas::Session) -> serde_json::Value {
     let user = session.user();
-    let link = match *session.link().borrow() {
-        Link::Up => "up",
-        Link::Reconnecting { .. } => "reconnecting",
-        Link::Ended(_) => "ended",
-    };
+    let link = session.link().borrow().as_str();
     json!({
         "username": user.username,
         "roles": user.roles,

@@ -191,9 +191,7 @@ pub(super) async fn generate_token(client: &Client, ttl_secs: u64) -> Result<Sec
 #[serde(tag = "response_type", rename_all = "SCREAMING_SNAKE_CASE")]
 pub(super) enum LoginResponse {
     Success {
-        #[serde(default)]
         user_info: Option<RawUserInfo>,
-        #[serde(default)]
         authenticator: Option<String>,
     },
     OtpRequired {},
@@ -220,7 +218,6 @@ impl LoginResponse {
 #[derive(Deserialize)]
 pub(super) struct RawUserInfo {
     pw_name: String,
-    #[serde(default)]
     privilege: Option<RawPrivilege>,
 }
 

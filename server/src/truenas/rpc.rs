@@ -15,15 +15,11 @@ pub(super) struct Request<'a> {
 /// Any message from the NAS: a response (has `id`) or a notification (has `method`, no `id`).
 #[derive(Deserialize)]
 pub(super) struct Incoming {
-    #[serde(default)]
     pub id: Option<Value>,
-    #[serde(default)]
     pub method: Option<String>,
     #[serde(default)]
     pub params: Value,
-    #[serde(default)]
     pub result: Option<Value>,
-    #[serde(default)]
     pub error: Option<RpcError>,
 }
 
@@ -32,9 +28,7 @@ pub(super) struct Incoming {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct RpcError {
     pub code: i64,
-    #[serde(default)]
     pub message: Option<String>,
-    #[serde(default)]
     pub data: Option<ErrorData>,
 }
 
@@ -43,13 +37,9 @@ pub struct RpcError {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct ErrorData {
     /// errno
-    #[serde(default)]
     pub error: Option<i64>,
-    #[serde(default)]
     pub errname: Option<String>,
-    #[serde(default)]
     pub reason: Option<String>,
-    #[serde(default)]
     pub extra: Option<Value>,
 }
 

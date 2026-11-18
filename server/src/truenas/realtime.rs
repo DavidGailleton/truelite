@@ -26,7 +26,6 @@ const VIRTUAL_PREFIXES: &[&str] = &[
 #[derive(Deserialize)]
 struct RawCpu {
     usage: f64,
-    #[serde(default)]
     temp: Option<f64>,
 }
 
@@ -40,13 +39,9 @@ struct RawMemory {
 /// Missing or `null` fields read as down / unknown / 0 (bonds, VLANs and tunnels report less).
 #[derive(Deserialize)]
 struct RawIface {
-    #[serde(default)]
     link_state: Option<String>,
-    #[serde(default)]
     speed: Option<f64>,
-    #[serde(default)]
     received_bytes_rate: Option<f64>,
-    #[serde(default)]
     sent_bytes_rate: Option<f64>,
 }
 

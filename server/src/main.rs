@@ -16,7 +16,6 @@ mod truenas;
 mod ws;
 
 use std::net::SocketAddr;
-use std::time::Duration;
 
 use axum::extract::{DefaultBodyLimit, FromRef, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -32,12 +31,10 @@ use crate::login::Login;
 use crate::origin::{Origins, SameOrigin};
 use crate::rate_limit::LimitOptions;
 use crate::sessions::{
-    Authed, SessionStore, StoreOptions, clear_cookie, cookie_value, session_json,
+    Authed, LOGOUT_TIMEOUT, SessionStore, StoreOptions, clear_cookie, cookie_value, session_json,
 };
 use crate::truenas::{Endpoint, SessionOptions};
 
-/// How long logout waits for the NAS to confirm.
-const LOGOUT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Largest login request body; a user name, a password and some JSON.
 const LOGIN_BODY_LIMIT: usize = 4096;
 

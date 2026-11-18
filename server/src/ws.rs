@@ -84,7 +84,6 @@ enum Request {
     Call {
         id: u32,
         method: String,
-        #[serde(default)]
         params: Option<Value>,
     },
     Sub {
@@ -98,7 +97,6 @@ enum Request {
 /// Reads only the id of a message that is not a valid [`Request`], to answer it.
 #[derive(Deserialize)]
 struct AnyId {
-    #[serde(default)]
     id: Option<u32>,
 }
 
@@ -176,7 +174,7 @@ struct TopicData<'a, F> {
 
 #[derive(Serialize)]
 struct UpdateData<'a, F> {
-    kind: &'static str,
+    kind: UpdateKind,
     id: &'a Option<Value>,
     fields: &'a F,
 }
@@ -238,16 +236,10 @@ fn result_reshaper(method: &str) -> Option<fn(Value) -> Value> {
 
 /// An update as a `data` message. Reshaped topics come already cut down by the session.
 fn data(topic: &str, u: &Update) -> String {
-    let kind = match u.kind {
-        UpdateKind::Added => "added",
-        UpdateKind::Changed => "changed",
-        UpdateKind::Removed => "removed",
-        UpdateKind::Other => "other",
-    };
     encode(&TopicData {
         topic,
         data: UpdateData {
-            kind,
+            kind: u.kind,
             id: &u.id,
             fields: &u.fields,
         },
@@ -256,11 +248,12 @@ fn data(topic: &str, u: &Update) -> String {
 
 /// `None` once the session has ended.
 fn link_state(link: &Link) -> Option<&'static str> {
-    match link {
-        Link::Up => Some("up"),
-        Link::Reconnecting { .. } => Some("reconnecting"),
-        Link::Ended(_) => None,
-    }
+    (!matches!(link, Link::Ended(_))).then(|| link.as_str())
+}
+
+/// Forgets the tasks of `set` that have finished, so its length counts only running ones.
+fn reap(set: &mut JoinSet<()>) {
+    while set.try_join_next().is_some() {}
 }
 
 fn link_message(state: &'static str) -> Message {
@@ -415,7 +408,7 @@ impl Bridge {
         let session = self.session.clone();
         let out = self.out_tx.clone();
         if job.is_some() {
-            while self.jobs.try_join_next().is_some() {}
+            reap(&mut self.jobs);
             if self.jobs.len() >= MAX_JOBS {
                 let error = WireError::new(
                     "busy",
@@ -427,7 +420,7 @@ impl Bridge {
                 .spawn(run_job(session, id, method, params, out).in_current_span());
             return None;
         }
-        while self.calls.try_join_next().is_some() {}
+        reap(&mut self.calls);
         if self.calls.len() >= MAX_CALLS {
             return Some(reply_err(Some(id), WireError::busy()));
         }
@@ -464,7 +457,7 @@ impl Bridge {
             let error = WireError::new("not_allowed", "truelite does not allow this event");
             return Some(status(&topic, Status::Ended { error }));
         };
-        while self.subs.try_join_next().is_some() {}
+        reap(&mut self.subs);
         self.topics.retain(|_, task| !task.is_finished());
         if self.topics.contains_key(&topic) {
             return None;
@@ -614,7 +607,7 @@ async fn forward_logs(topic: &str, mut sub: truenas::Subscription, out: &mpsc::S
             let msg = encode(&TopicData {
                 topic,
                 data: UpdateData {
-                    kind: "added",
+                    kind: UpdateKind::Added,
                     id: &None,
                     fields: &LogBatch { lines: &lines },
                 },

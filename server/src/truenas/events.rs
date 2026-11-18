@@ -8,7 +8,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::{broadcast, mpsc};
 
@@ -17,8 +17,9 @@ use super::error::Error;
 use super::reshape::reshaper;
 use super::rpc::{ErrorData, RpcError};
 
-/// What changed in a collection event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What changed in a collection event. Serializes as `added`, `changed`, `removed` or `other`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum UpdateKind {
     Added,
     Changed,

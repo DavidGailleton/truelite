@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use axum::Json;
@@ -24,7 +24,10 @@ use serde_json::json;
 
 use crate::origin::SameOrigin;
 use crate::rate_limit::{LimitOptions, RateLimiter, RetryAfter};
-use crate::sessions::{Key, SessionId, SessionStore, named_cookie, session_json, set_cookie};
+use crate::sessions::{
+    Key, LOGOUT_TIMEOUT, SessionId, SessionStore, cookie, named_cookie, session_json, set_cookie,
+    spawn_every,
+};
 use crate::truenas::{self, AuthFailure, Endpoint, LoginStep, PendingOtp, Secret, SessionOptions};
 
 /// Cookie holding the ticket of a login waiting for its one-time code.
@@ -126,14 +129,8 @@ impl Login {
 
     /// Forgets expired pending logins (closing their NAS sockets) and full rate-limit buckets.
     pub fn sweep_at(&self, now: Instant) {
-        let expired: Vec<Pending> = {
-            let mut map = self.lock();
-            let keys: Vec<Key> = map
-                .iter()
-                .filter_map(|(k, p)| p.expired(now).then_some(*k))
-                .collect();
-            keys.iter().filter_map(|k| map.remove(k)).collect()
-        };
+        // Dropped after the lock is released: dropping closes NAS sockets.
+        let expired: Vec<_> = self.lock().extract_if(|_, p| p.expired(now)).collect();
         drop(expired);
         self.inner.limiter.prune_at(now);
     }
@@ -141,15 +138,7 @@ impl Login {
     /// Sweeps every `every` until the runtime stops.
     pub fn spawn_sweeper(&self, every: Duration) -> tokio::task::JoinHandle<()> {
         let login = self.clone();
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(every);
-            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-            tick.tick().await;
-            loop {
-                tick.tick().await;
-                login.sweep_at(Instant::now());
-            }
-        })
+        spawn_every(every, move |now| login.sweep_at(now))
     }
 
     fn nas(&self) -> Result<&Endpoint, LoginError> {
@@ -286,19 +275,13 @@ impl IntoResponse for LoginError {
 
 /// `Set-Cookie` value that stores an OTP ticket until it expires.
 fn otp_cookie(ticket: &SessionId) -> HeaderValue {
-    HeaderValue::from_str(&format!(
-        "{OTP_COOKIE}={}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={}",
-        ticket.as_str(),
-        OTP_TTL.as_secs()
-    ))
-    .expect("hex ids are valid header values")
+    cookie(OTP_COOKIE, ticket.as_str(), OTP_TTL)
 }
 
 /// `Set-Cookie` value that deletes the OTP ticket cookie.
 fn clear_otp_cookie() -> HeaderValue {
-    HeaderValue::from_static(
-        "__Host-truelite-otp=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0",
-    )
+    static CLEAR: LazyLock<HeaderValue> = LazyLock::new(|| cookie(OTP_COOKIE, "", Duration::ZERO));
+    CLEAR.clone()
 }
 
 /// Body of `POST /api/login`. No `Debug`: it holds the password.
@@ -420,7 +403,7 @@ fn ended(e: LoginError) -> Response {
 async fn admit(session: truenas::Session, sessions: &SessionStore) -> Result<Response, LoginError> {
     if !session.user().webui_access {
         tracing::info!(user = %session.user().username, "login refused: no web UI access");
-        let _ = tokio::time::timeout(Duration::from_secs(5), session.logout()).await;
+        let _ = tokio::time::timeout(LOGOUT_TIMEOUT, session.logout()).await;
         return Err(LoginError::NoWebUi);
     }
     let body = session_json(&session);
