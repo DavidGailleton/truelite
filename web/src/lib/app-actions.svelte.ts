@@ -8,6 +8,11 @@ import { NasError } from './ws';
 
 /** A done run is dropped after this even if the app never reached its new state. */
 const SETTLE_MAX_MS = 120_000;
+/**
+ * The status line stays at least this long after the click. A restart's job ends when compose
+ * exits, often in about a second, and the app is RUNNING before and after.
+ */
+const MIN_SHOWN_MS = 2_000;
 
 const runs = new SvelteMap<string, ActionRun>();
 
@@ -38,6 +43,7 @@ export function dismissAction(id: string): void {
  */
 export function runAction(id: string, action: AppAction): void {
 	if (isRunning(id)) return;
+	const started = Date.now();
 	const mine: ActionRun = { action, progress: null, done: false, error: null };
 	runs.set(id, mine);
 	// This call's latest run; an update is dropped once the map holds another one (a later
@@ -56,11 +62,16 @@ export function runAction(id: string, action: AppAction): void {
 		})
 		.then(
 			() => {
-				const done = { ...current, done: true };
-				if (!update(done)) return;
-				setTimeout(() => {
-					if (runs.get(id) === done) runs.delete(id);
-				}, SETTLE_MAX_MS);
+				setTimeout(
+					() => {
+						const done = { ...current, done: true };
+						if (!update(done)) return;
+						setTimeout(() => {
+							if (runs.get(id) === done) runs.delete(id);
+						}, SETTLE_MAX_MS);
+					},
+					Math.max(0, MIN_SHOWN_MS - (Date.now() - started))
+				);
 			},
 			(e: unknown) => {
 				const body =

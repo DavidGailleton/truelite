@@ -77,6 +77,8 @@ class AppDetailStore {
 
 export type AppDetailView = Pick<AppDetailStore, 'detail' | 'missing' | 'error'> & {
 	retry(): void;
+	/** Queries the app again (an action ended: TrueNAS sends no event after its containers start). */
+	reload(): void;
 };
 
 /**
@@ -97,6 +99,7 @@ export function useAppDetail(id: string): AppDetailView {
 		get error() {
 			return store.error;
 		},
+		reload: () => store.load(),
 		retry: () => {
 			store.error = null;
 			topic.retry();

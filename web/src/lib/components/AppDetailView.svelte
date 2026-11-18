@@ -2,6 +2,7 @@
 	// One app: state, version, web UI links, then its containers, ports and folders. Live through
 	// `app.query` events (each one about this app queries it again). Each container links to its
 	// live log (#32). Start, stop and restart, confirmed in a dialog, with the job's progress (#33).
+	import { untrack } from 'svelte';
 	import {
 		ACTION_LABELS,
 		actionDialog,
@@ -44,17 +45,25 @@
 		if (detail.app.custom) parts.push('Custom app');
 		return parts.join(' · ');
 	});
-	const [primaryPortal, ...otherPortals] = $derived(detail?.portals ?? []);
 	const dim = $derived(view.kind === 'ready' && (view.paused || view.stale !== null));
 
 	const ACTION_ICONS = { start: 'play', stop: 'square', restart: 'rotate-cw' } as const;
 	const run = $derived(actionRun(id));
 	// The job, then the wait for the app's new state (or a start/stop from elsewhere).
 	const busy = $derived(detail ? busyLine(run, detail.app.state) : null);
+	// An action's job ended: its containers were recreated (new ids) and TrueNAS sends no event
+	// after they start, so query the app again, once per run.
+	$effect(() => {
+		if (run?.done) untrack(() => app.reload());
+	});
 	// The app reached its new state: the done run has nothing more to show.
 	$effect(() => {
 		if (run?.done && detail && busy === null) finishAction(id);
 	});
+	// Web UI links only work while the app runs, and not in the middle of an action.
+	const [primaryPortal, ...otherPortals] = $derived(
+		detail && detail.app.state === 'running' && !busy ? detail.portals : []
+	);
 	// Actions need the NAS link and the Apps write role; none while the app is changing.
 	const actions = $derived(
 		detail && view.kind === 'ready' && !view.paused && canChangeApps(session.user?.roles)
