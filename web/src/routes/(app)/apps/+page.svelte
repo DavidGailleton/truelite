@@ -2,7 +2,10 @@
 	// Apps: every installed app with its state, version and pending update, attention first.
 	// Live through `app.query` events (the store is shared with the dashboard card). Filter and
 	// search live in the URL (`?show=updates&q=jelly`), so a reload or a link keeps the view.
+	// Each row has the app's actions as icon buttons (start, stop, restart, update), confirmed in
+	// the same dialog as on the app page; on phones they sit on a second line.
 	import { replaceState } from '$app/navigation';
+	import { canChangeApps } from '#lib/app-actions.js';
 	import { page } from '$app/state';
 	import { apps, useApps } from '#lib/apps.svelte.js';
 	import {
@@ -16,6 +19,8 @@
 	} from '#lib/apps.js';
 	import { cardView } from '#lib/card-state.js';
 	import { connection } from '#lib/nas.svelte.js';
+	import { session } from '#lib/session.svelte.js';
+	import AppActions from '#lib/components/AppActions.svelte';
 	import Card from '#lib/components/Card.svelte';
 	import CardBadge from '#lib/components/CardBadge.svelte';
 	import CardNotice from '#lib/components/CardNotice.svelte';
@@ -47,6 +52,10 @@
 			error: apps.error,
 			status: connection.status
 		})
+	);
+	// Actions need the NAS link and the Apps write role.
+	const canAct = $derived(
+		view.kind === 'ready' && !view.paused && canChangeApps(session.user?.roles)
 	);
 	const subtitle = $derived(
 		counts
@@ -141,6 +150,9 @@
 										<StatusPill {...state} />
 									</div>
 								</a>
+								<div class="row-actions">
+									<AppActions {app} {canAct} compact />
+								</div>
 							</li>
 						{/each}
 					</ul>
@@ -246,6 +258,7 @@
 		opacity: 0.5;
 	}
 	.rows li {
+		flex-wrap: wrap;
 		border-top: 1px solid var(--border-subdued);
 	}
 	.rows li,
@@ -270,6 +283,22 @@
 	}
 	.row:focus-visible {
 		outline-offset: -2px;
+	}
+	/* Desktop: the icons end the row. Phone: a second line, under the name, aligned right. */
+	.row-actions {
+		display: flex;
+		justify-content: flex-end;
+		padding: var(--space-1) var(--space-5) var(--space-1) 0;
+	}
+	.row-actions:not(:has(*)) {
+		display: none;
+	}
+	@media (max-width: 639px) {
+		.row-actions {
+			flex-basis: 100%;
+			margin-top: calc(-1 * var(--space-2));
+			padding: 0 var(--space-5) var(--space-2) calc(var(--space-5) + 2rem + var(--space-3));
+		}
 	}
 	.avatar {
 		display: grid;

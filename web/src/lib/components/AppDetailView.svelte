@@ -4,31 +4,20 @@
 	// live log (#32). Start, stop and restart, confirmed in a dialog, with the job's progress (#33).
 	// Update, with the new version and its changelog in the dialog (#34).
 	import { untrack } from 'svelte';
-	import {
-		ACTION_LABELS,
-		actionCall,
-		actionDialog,
-		appActions,
-		busyLine,
-		canChangeApps,
-		type AppAction
-	} from '#lib/app-actions.js';
-	import { actionRun, dismissAction, finishAction, runAction } from '#lib/app-actions.svelte.js';
+	import { busyLine, canChangeApps } from '#lib/app-actions.js';
+	import { actionRun } from '#lib/app-actions.svelte.js';
 	import { appMounts, containerStateLabel, portLabel } from '#lib/app-detail.js';
 	import { useAppDetail } from '#lib/app-detail.svelte.js';
-	import { parseUpgradeSummary, UPGRADE_SUMMARY, type UpgradeSummary } from '#lib/app-upgrade.js';
 	import { stateLabel } from '#lib/apps.js';
 	import { cardView } from '#lib/card-state.js';
-	import { connection, nas } from '#lib/nas.svelte.js';
+	import { connection } from '#lib/nas.svelte.js';
 	import { session } from '#lib/session.svelte.js';
-	import { NasError } from '#lib/ws.js';
+	import AppActions from './AppActions.svelte';
 	import Card from './Card.svelte';
 	import CardBadge from './CardBadge.svelte';
 	import CardNotice from './CardNotice.svelte';
-	import ConfirmDialog from './ConfirmDialog.svelte';
 	import EmptyState from './EmptyState.svelte';
 	import Icon from './Icon.svelte';
-	import JobProgress from './JobProgress.svelte';
 	import PageHeader from './PageHeader.svelte';
 	import StatusPill from './StatusPill.svelte';
 
@@ -51,12 +40,6 @@
 	});
 	const dim = $derived(view.kind === 'ready' && (view.paused || view.stale !== null));
 
-	const ACTION_ICONS = {
-		start: 'play',
-		stop: 'square',
-		restart: 'rotate-cw',
-		update: 'circle-arrow-up'
-	} as const;
 	const run = $derived(actionRun(id));
 	// The job, then the wait for the app's new state (or a start/stop from elsewhere).
 	const busy = $derived(detail ? busyLine(run, detail.app.state) : null);
@@ -65,72 +48,14 @@
 	$effect(() => {
 		if (run?.done) untrack(() => app.reload());
 	});
-	// The app reached its new state: the done run has nothing more to show.
-	$effect(() => {
-		if (run?.done && detail && busy === null) finishAction(id);
-	});
 	// Web UI links only work while the app runs, and not in the middle of an action.
 	const [primaryPortal, ...otherPortals] = $derived(
 		detail && detail.app.state === 'running' && !busy ? detail.portals : []
 	);
-	// Actions need the NAS link and the Apps write role; none while the app is changing.
+	// Actions (AppActions) need the NAS link and the Apps write role.
 	const canAct = $derived(
 		detail !== null && view.kind === 'ready' && !view.paused && canChangeApps(session.user?.roles)
 	);
-	const actions = $derived(canAct && detail ? appActions(detail.app.state, detail.app.update) : []);
-	/** The action waiting for the user's confirmation. */
-	let asking = $state<AppAction | null>(null);
-	const dialog = $derived(
-		asking && detail ? actionDialog(asking, detail.app.name, detail.app.update) : null
-	);
-
-	/** The Update dialog's `app.upgrade_summary`: versions and changelog of a new version. */
-	type SummaryState =
-		| { kind: 'loading' }
-		| { kind: 'ready'; summary: UpgradeSummary }
-		| { kind: 'error'; message: string };
-	let summary = $state.raw<SummaryState | null>(null);
-	/** Snapshot the app's host-path folders before an upgrade (TrueNAS default: no). */
-	let snapshot = $state(false);
-	let summaryRequest = 0;
-
-	function loadSummary() {
-		const request = ++summaryRequest;
-		summary = { kind: 'loading' };
-		nas()
-			.call(UPGRADE_SUMMARY, [id])
-			.then(
-				(raw) => {
-					if (request !== summaryRequest) return;
-					const parsed = parseUpgradeSummary(raw);
-					summary = parsed
-						? { kind: 'ready', summary: parsed }
-						: { kind: 'error', message: 'The NAS sent an answer truelite does not understand.' };
-				},
-				(e: unknown) => {
-					if (request !== summaryRequest) return;
-					summary = {
-						kind: 'error',
-						message: e instanceof NasError ? e.message : 'Unknown error.'
-					};
-				}
-			);
-	}
-
-	function ask(action: AppAction) {
-		dismissAction(id);
-		asking = action;
-		snapshot = false;
-		summaryRequest++;
-		summary = null;
-		// Only a new version has a summary: TrueNAS refuses it for image-only updates.
-		if (action === 'update' && detail?.app.update === 'version') loadSummary();
-	}
-
-	function confirmAction() {
-		if (asking && detail) runAction(id, asking, actionCall(asking, detail.app, snapshot));
-		asking = null;
-	}
 </script>
 
 <a class="back" href="/apps"><Icon name="arrow-left" size={16} />Apps</a>
@@ -183,31 +108,7 @@
 				{#if canAct && detail.app.update && detail.app.state === 'stopped'}
 					<p class="context">Start the app to update it.</p>
 				{/if}
-				{#if busy}
-					<JobProgress progress={busy.progress} label={busy.label} />
-				{:else if actions.length > 0}
-					<div class="app-actions">
-						{#each actions as action (action)}
-							<button type="button" class="button-outline action" onclick={() => ask(action)}>
-								<Icon name={ACTION_ICONS[action]} size={16} />{ACTION_LABELS[action]}
-							</button>
-						{/each}
-					</div>
-				{/if}
-				{#if run?.error}
-					<div class="action-error" role="alert">
-						<Icon name="circle-alert" size={16} />
-						<p>{run.error}</p>
-						<button
-							type="button"
-							class="dismiss"
-							aria-label="Dismiss"
-							onclick={() => dismissAction(id)}
-						>
-							×
-						</button>
-					</div>
-				{/if}
+				<AppActions app={detail.app} {canAct} />
 				{#if otherPortals.length > 0}
 					<ul class="portals">
 						{#each otherPortals as portal (portal.url)}
@@ -293,44 +194,6 @@
 			{/if}
 		{/if}
 	</div>
-{/if}
-
-{#if dialog}
-	<ConfirmDialog
-		{...dialog}
-		busy={asking === 'update' && summary?.kind === 'loading'}
-		onconfirm={confirmAction}
-		oncancel={() => (asking = null)}
-	>
-		{#if asking === 'update' && detail?.app.update === 'version'}
-			<div class="update">
-				{#if summary?.kind === 'ready'}
-					<p class="versions">
-						<span class="mono">{detail.app.version ?? 'Current version'}</span>
-						<Icon name="arrow-right" size={16} />
-						<span class="mono">{summary.summary.to ?? 'Latest version'}</span>
-					</p>
-					{#if summary.summary.changelog}
-						<details>
-							<summary>What's new</summary>
-							<p class="changelog">{summary.summary.changelog}</p>
-						</details>
-					{/if}
-				{:else if summary?.kind === 'error'}
-					<p class="context">
-						Couldn't check the new version: {summary.message} You can still update.
-					</p>
-				{:else}
-					<span aria-hidden="true" class="skeleton line" style:width="10rem"></span>
-					<p class="visually-hidden">Checking the new version…</p>
-				{/if}
-				<label class="check">
-					<input type="checkbox" bind:checked={snapshot} />
-					Snapshot the app's folders first
-				</label>
-			</div>
-		{/if}
-	</ConfirmDialog>
 {/if}
 
 <style>
@@ -424,109 +287,6 @@
 		min-height: 2rem;
 		color: var(--text-primary);
 		font-weight: var(--weight-medium);
-	}
-	.app-actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2);
-	}
-	.action {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
-	}
-	.action-error {
-		display: flex;
-		align-items: flex-start;
-		gap: var(--space-2);
-		padding: var(--space-2) var(--space-3);
-		border-radius: var(--radius-md);
-		background: var(--destructive-tint);
-		color: var(--destructive);
-		font-size: var(--text-sm);
-	}
-	.action-error > :global(svg) {
-		flex: none;
-		margin-top: 0.125rem;
-	}
-	.action-error p {
-		flex: 1;
-		color: var(--text-primary);
-	}
-	.dismiss {
-		flex: none;
-		width: 1.5rem;
-		height: 1.5rem;
-		margin: -0.125rem -0.25rem 0 0;
-		border: 0;
-		border-radius: var(--radius-md);
-		background: transparent;
-		color: var(--text-secondary);
-		font: inherit;
-		font-size: var(--text-base);
-		cursor: pointer;
-	}
-	.dismiss:hover {
-		color: var(--text-primary);
-	}
-	@media (pointer: coarse) {
-		.dismiss {
-			width: var(--touch);
-			height: var(--touch);
-			margin: calc(-1 * var(--space-3)) calc(-1 * var(--space-3)) 0 0;
-		}
-	}
-	.update {
-		display: grid;
-		gap: var(--space-2);
-	}
-	.versions {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: var(--space-2);
-		color: var(--text-primary);
-	}
-	.versions .mono {
-		font-size: var(--text-sm);
-	}
-	details summary {
-		min-height: 2rem;
-		align-content: center;
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		cursor: pointer;
-	}
-	.changelog {
-		max-height: 12rem;
-		overflow-y: auto;
-		padding: var(--space-2) var(--space-3);
-		border-radius: var(--radius-md);
-		background: var(--container-inset);
-		color: var(--text-secondary);
-		font-size: var(--text-sm);
-		white-space: pre-line;
-		overflow-wrap: anywhere;
-	}
-	.check {
-		display: flex;
-		align-items: center;
-		gap: var(--space-2);
-		min-height: 2rem;
-		font-size: var(--text-sm);
-		cursor: pointer;
-	}
-	.check input {
-		width: 1rem;
-		height: 1rem;
-		margin: 0;
-		accent-color: var(--button-primary-bg);
-	}
-	@media (pointer: coarse) {
-		details summary,
-		.check {
-			min-height: var(--touch);
-		}
 	}
 	.skeletons {
 		display: grid;
