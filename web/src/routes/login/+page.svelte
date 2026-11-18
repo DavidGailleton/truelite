@@ -7,7 +7,6 @@
 	import Icon from '#lib/components/Icon.svelte';
 	import Logo from '#lib/components/Logo.svelte';
 	import { loginWithCode, loginWithPassword, safeNext, type LoginResult } from '#lib/login.js';
-	import { closeNas } from '#lib/nas.svelte.js';
 	import { setSession } from '#lib/session.svelte.js';
 
 	let step = $state<'password' | 'code'>('password');
@@ -53,8 +52,6 @@
 		switch (result.kind) {
 			case 'done':
 				setSession(result.user);
-				// A socket left from an ended session is final: the shell opens a new one.
-				closeNas();
 				await goto(safeNext(page.url.searchParams.get('next')), { replaceState: true });
 				return;
 			case 'otp':

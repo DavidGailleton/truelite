@@ -4,8 +4,13 @@ import { redirect } from '@sveltejs/kit';
 import { loadSession } from '#lib/session.svelte.js';
 import type { LayoutLoad } from './$types';
 
-export const load: LayoutLoad = async ({ url }) => {
-	if ((await loadSession()) === 'out') {
-		redirect(307, `/login?next=${encodeURIComponent(url.pathname + url.search)}`);
-	}
+export const load: LayoutLoad = async ({ url, untrack }) => {
+	if ((await loadSession()) !== 'out') return;
+	// Untracked: reading the URL would re-run this load on every navigation. `url.hash` is off
+	// limits in a load; `location` has it on a first load or reload, when it shows this URL.
+	const next = untrack(() => {
+		const hash = location.pathname === url.pathname ? location.hash : '';
+		return url.pathname + url.search + hash;
+	});
+	redirect(307, `/login?next=${encodeURIComponent(next)}`);
 };

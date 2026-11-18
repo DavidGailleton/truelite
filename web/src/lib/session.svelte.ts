@@ -18,14 +18,16 @@ export type SessionState = 'in' | 'out' | 'unreachable';
 let loading: Promise<SessionState> | null = null;
 
 /**
- * Loads the session once; later calls share the first request. An unreachable server is not
- * remembered, so the next call asks again.
+ * Loads the session; calls made while a request is running share it. Only a logged-in answer is
+ * remembered: after "not logged in" or an unreachable server the next call asks again, so a login
+ * from another tab is seen.
  */
 export function loadSession(): Promise<SessionState> {
 	loading ??= fetch('/api/session', { credentials: 'same-origin', cache: 'no-store' })
 		.then(async (res): Promise<SessionState> => {
 			if (res.status === 401) {
 				session.user = null;
+				loading = null;
 				return 'out';
 			}
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
