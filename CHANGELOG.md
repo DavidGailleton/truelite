@@ -2,6 +2,13 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.8.1 — 2026-11-18
+
+### Tests
+
+- **server:** Share browser test helpers between ws and login tests
+- **server:** End-to-end journey from login through reconnect to logout
+
 ## v0.8.0 — 2026-11-18
 
 ### Features
