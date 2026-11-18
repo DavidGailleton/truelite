@@ -428,6 +428,9 @@ pub fn fake_nas() -> (
             "system.info" => Reply::Result(json!({"hostname": "truenas"})),
             "alert.list" => Reply::Result(json!([{"uuid": "a1", "level": "WARNING",
                 "formatted": "Disk is hot", "args": {"disk": "sda"}, "mail": {"status": "sent"}}])),
+            "app.query" => Reply::Result(json!([{"id": "jellyfin", "state": "RUNNING",
+                "active_workloads": {"container_details": [{"id": "c1", "state": "running"}]},
+                "metadata": {"description": "Media server"}}])),
             "fast" => Reply::Result(json!("fast")),
             "slow" => Reply::Delay(
                 Duration::from_millis(300),

@@ -14,7 +14,7 @@ const METHODS: &[&str] = &[
     "pool.query",
     // Dashboard: usable space of the pools' root datasets (DATASET_READ).
     "pool.dataset.query",
-    // Dashboard: apps summary, with `select` (APPS_READ).
+    // Dashboard card, apps page, app detail (one app by id), with `select` (APPS_READ).
     "app.query",
 ];
 
@@ -28,7 +28,8 @@ const EVENTS: &[&str] = &[
     "pool.query",
     // Dashboard: scrub and resilver progress (POOL_SCRUB_READ).
     "pool.scan",
-    // Dashboard: app changes (APPS_READ). Reshaped by `truenas::apps` (no workloads, metadata).
+    // Dashboard, apps page, app detail: app changes (APPS_READ). Reshaped by `truenas::apps` (no
+    // workloads, metadata): the detail page queries its app again on each event about it.
     "app.query",
 ];
 

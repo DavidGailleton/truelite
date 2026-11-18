@@ -65,7 +65,7 @@
 				<ul class="crashed">
 					{#each summary.crashed as app (app.id)}
 						<li>
-							<span class="name">{app.name}</span>
+							<a class="name" href="/apps/{encodeURIComponent(app.id)}">{app.name}</a>
 							<StatusPill label="Crashed" tone="destructive" />
 						</li>
 					{/each}
@@ -148,8 +148,12 @@
 		gap: var(--space-1) var(--space-3);
 	}
 	.name {
+		color: inherit;
 		font-weight: var(--weight-medium);
 		overflow-wrap: anywhere;
+		text-decoration: underline;
+		text-decoration-thickness: 1px;
+		text-underline-offset: 0.2em;
 	}
 	.header-end {
 		display: flex;

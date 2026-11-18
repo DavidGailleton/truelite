@@ -1,7 +1,9 @@
 //! `app.query` events: TrueNAS sends the whole app on every change (`active_workloads` with its
 //! containers, ports and volumes, `portals`, `metadata` with the catalog description and
 //! screenshots, `notes`), which the dashboard does not use. The bridge keeps only the fields the
-//! web app selects in its own `app.query` call: [`compact`].
+//! web app selects in its own `app.query` call: [`compact`]. The app detail page (#31) needs the
+//! workloads, so it treats an event about its app as a signal and queries that one app again
+//! (filter by id, dotted `select`); the call result is never compacted.
 //!
 //! Event schema: <https://api.truenas.com/v25.10/api_events_app.query.html> (role `APPS_READ`).
 

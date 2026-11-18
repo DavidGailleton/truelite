@@ -121,25 +121,26 @@
 						<button class="button-outline" type="button" onclick={showAll}>Show all</button>
 					</div>
 				{:else}
-					<!-- #31 turns each row into a link to /apps/[id]. -->
 					<ul class={['rows', { dim: view.paused || view.stale }]}>
 						{#each shown as app (app.id)}
 							{@const state = stateLabel(app.state)}
 							<li>
-								<span class="avatar" aria-hidden="true">{app.name.charAt(0).toUpperCase()}</span>
-								<div class="text">
-									<span class="name">{app.name}</span>
-									{#if app.version || app.custom}
-										<span class="meta">
-											{#if app.version}<span class="version">{app.version}</span>{/if}
-											{#if app.custom}<span class="marker">Custom</span>{/if}
-										</span>
-									{/if}
-								</div>
-								<div class="pills">
-									{#if app.updateAvailable}<StatusPill label="Update" tone="warning" />{/if}
-									<StatusPill {...state} />
-								</div>
+								<a class="row" href="/apps/{encodeURIComponent(app.id)}">
+									<span class="avatar" aria-hidden="true">{app.name.charAt(0).toUpperCase()}</span>
+									<div class="text">
+										<span class="name">{app.name}</span>
+										{#if app.version || app.custom}
+											<span class="meta">
+												{#if app.version}<span class="version">{app.version}</span>{/if}
+												{#if app.custom}<span class="marker">Custom</span>{/if}
+											</span>
+										{/if}
+									</div>
+									<div class="pills">
+										{#if app.updateAvailable}<StatusPill label="Update" tone="warning" />{/if}
+										<StatusPill {...state} />
+									</div>
+								</a>
 							</li>
 						{/each}
 					</ul>
@@ -147,7 +148,7 @@
 			{:else if view.kind === 'loading'}
 				<ul class="rows" aria-hidden="true">
 					{#each [0, 1, 2, 3, 4] as i (i)}
-						<li>
+						<li class="placeholder">
 							<span class="avatar skeleton"></span>
 							<div class="text">
 								<span class="skeleton line" style:width="{6 + (i % 3) * 2}rem"></span>
@@ -245,12 +246,30 @@
 		opacity: 0.5;
 	}
 	.rows li {
+		border-top: 1px solid var(--border-subdued);
+	}
+	.rows li,
+	.row {
 		display: flex;
 		align-items: center;
 		gap: var(--space-3);
 		min-height: var(--touch);
+	}
+	.placeholder {
 		padding: var(--space-2) var(--space-5);
-		border-top: 1px solid var(--border-subdued);
+	}
+	.row {
+		flex: 1;
+		min-width: 0;
+		padding: var(--space-2) var(--space-5);
+		color: inherit;
+		text-decoration: none;
+	}
+	.row:hover {
+		background: var(--container-hover);
+	}
+	.row:focus-visible {
+		outline-offset: -2px;
 	}
 	.avatar {
 		display: grid;

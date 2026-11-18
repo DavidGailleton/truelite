@@ -56,7 +56,7 @@ Done when the dashboard works on a phone at 360 px with live data and no polling
 List, inspect, follow logs, then start/stop/restart/upgrade apps with confirmation and job progress.
 
 - [x] #30 Apps list with state
-- [ ] #31 App detail: containers, ports, image
+- [x] #31 App detail: containers, ports, image
 - [ ] #32 Follow app logs
 - [ ] #33 Start, stop and restart apps with job progress
 - [ ] #34 Upgrade apps with job progress

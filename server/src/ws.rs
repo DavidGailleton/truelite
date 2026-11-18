@@ -675,6 +675,33 @@ mod tests {
         );
     }
 
+    /// Issue #31: the app detail page asks for one app with a filter and a dotted `select`; both
+    /// reach the NAS unchanged, and the answer keeps what the compacted `app.query` event drops.
+    #[tokio::test]
+    async fn an_app_detail_query_keeps_its_params_and_workloads() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        let params = json!([[["id", "=", "jellyfin"]],
+            {"select": ["id", "state", "active_workloads.container_details", "metadata.description"]}]);
+        send(
+            &mut ws,
+            json!({"op": "call", "id": 4, "method": "app.query", "params": params}),
+        )
+        .await;
+        let reply = next(&mut ws).await;
+        assert_eq!(reply["id"], 4);
+        assert_eq!(
+            reply["result"][0]["active_workloads"]["container_details"][0]["id"],
+            "c1"
+        );
+        assert_eq!(
+            reply["result"][0]["metadata"]["description"],
+            "Media server"
+        );
+        let req = h.mock.requests().pop().unwrap();
+        assert_eq!((req.method.as_str(), req.params), ("app.query", params));
+    }
+
     #[tokio::test]
     async fn replies_come_back_as_they_finish_with_their_ids() {
         static METHODS: &[&str] = &["slow", "fast", "never"];

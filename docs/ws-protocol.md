@@ -103,9 +103,10 @@ own `pool.query` call: `id`, `name`, `status`, `healthy`, `warning`, `status_cod
 **`app.query`**: app changes (needs `APPS_READ`). TrueNAS sends the whole app on every change:
 its containers, ports and volumes (`active_workloads`), `portals`, the catalog `metadata` and
 `notes`. The server keeps only the fields the web app selects in its own `app.query` call: `id`,
-`name`, `state`, `upgrade_available`, `image_updates_available`, `custom_app` (the list is
-`FIELDS` in `server/src/truenas/apps.rs`). App ids are strings (the app name). A `removed` event
-has only its `id`.
+`name`, `state`, `upgrade_available`, `image_updates_available`, `custom_app`, `version`,
+`human_version` (the list is `FIELDS` in `server/src/truenas/apps.rs`). App ids are strings (the
+app name). A `removed` event has only its `id`. The app detail page needs the workloads, so it
+queries its one app again on each event about it (`app.query` call results are not trimmed).
 
 **`alert.list`**: alert changes (needs `ALERT_LIST_READ`). Each alert carries its class
 arguments (`args`) and its e-mail state (`mail`), and the `alert.list` method takes no `select`,
