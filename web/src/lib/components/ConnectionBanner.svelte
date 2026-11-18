@@ -51,7 +51,7 @@
 		z-index: 10;
 	}
 	.banner {
-		--tone: var(--warn);
+		--tone: var(--warning);
 		display: flex;
 		align-items: center;
 		gap: var(--space-2);
@@ -60,12 +60,12 @@
 		padding: var(--space-3) var(--space-4);
 		border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
 		border-radius: var(--radius-lg);
-		background: color-mix(in srgb, var(--tone) 10%, var(--surface));
-		color: var(--text);
-		font-weight: 500;
+		background: color-mix(in srgb, var(--tone) 10%, var(--container));
+		color: var(--text-primary);
+		font-weight: var(--weight-medium);
 	}
 	.banner.danger {
-		--tone: var(--danger);
+		--tone: var(--destructive);
 	}
 	svg {
 		flex: none;

@@ -15,6 +15,13 @@ export function nas(): NasSocket {
 	return socket;
 }
 
+/** Stops the connection after a logout; the next {@link nas} call opens a fresh one. */
+export function closeNas(): void {
+	socket?.close();
+	socket = undefined;
+	connection.status = 'connecting';
+}
+
 /**
  * Follows a topic while the calling component is mounted. Call from component setup. The handler
  * should query the state again whenever `needsRefetch(message)` is true.

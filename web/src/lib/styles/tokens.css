@@ -1,72 +1,198 @@
-/* Design tokens. Every colour, size and radius in the app comes from here. */
+/*
+ * Design tokens (docs/ui-style.md). Every colour, size, radius and shadow in the app comes from
+ * here. Components use the role tokens (`--surface`, `--text-secondary`, …); the ramps below are
+ * private building blocks. Dark mode redefines only role tokens, twice: from the OS preference
+ * unless `data-theme="light"`, and for an explicit `data-theme="dark"`.
+ */
 :root {
-	color-scheme: light dark;
+	color-scheme: light;
 
+	/* Ramps (private: use the role tokens below in components). */
+	--gray-25: #fafafa;
+	--gray-50: #f7f7f7;
+	--gray-100: #f0f0f0;
+	--gray-200: #e7e7e7;
+	--gray-300: #cfcfcf;
+	--gray-400: #9e9e9e;
+	--gray-500: #737373;
+	--gray-700: #363636;
+	--gray-800: #242424;
+	--gray-900: #171717;
+	--black: #0b0b0b;
+	--white: #ffffff;
+	--alpha-black-5: rgb(11 11 11 / 5%);
+	--alpha-black-6: rgb(11 11 11 / 6%);
+	--alpha-black-10: rgb(11 11 11 / 10%);
+	--alpha-black-15: rgb(11 11 11 / 15%);
+	--alpha-black-50: rgb(11 11 11 / 50%);
+	--alpha-black-85: rgb(11 11 11 / 85%);
+	--alpha-white-8: rgb(255 255 255 / 8%);
+	--alpha-white-10: rgb(255 255 255 / 10%);
+	--alpha-white-15: rgb(255 255 255 / 15%);
+	--alpha-white-20: rgb(255 255 255 / 20%);
+	--alpha-white-30: rgb(255 255 255 / 30%);
+	--alpha-white-50: rgb(255 255 255 / 50%);
+	--green-400: #32d583;
+	--green-700: #078c52;
+	--yellow-400: #fdb022;
+	--yellow-600: #dc6803;
+	--red-400: #ed4e4e;
+	--red-500: #f13636;
+	--blue-500: #2e90fa;
+	--blue-600: #1570ef;
+
+	/* Surfaces. */
+	--surface: var(--gray-50);
+	--surface-hover: var(--gray-100);
+	--surface-inset: var(--gray-100);
+	--container: var(--white);
+	--container-hover: var(--gray-50);
+	--container-inset: var(--gray-50);
+	--container-inset-hover: var(--gray-100);
+	--overlay: rgb(240 240 240 / 50%);
+
+	/* Text. */
+	--text-primary: var(--gray-900);
+	--text-secondary: var(--gray-500);
+	--text-subdued: var(--gray-400);
+
+	/* Lines, focus, navigation. */
+	--border-primary: var(--alpha-black-15);
+	--border-secondary: var(--alpha-black-10);
+	--border-subdued: var(--alpha-black-5);
+	--focus-ring: var(--alpha-black-50);
+	--focus-halo: var(--alpha-black-10);
+	--nav-indicator: var(--black);
+
+	/* Primary button: inverse of the page. */
+	--button-primary-bg: var(--gray-900);
+	--button-primary-text: var(--white);
+
+	/* Status: meaning only. Tints are for backgrounds behind status text. */
+	--success: var(--green-700);
+	--warning: var(--yellow-600);
+	--destructive: var(--red-500);
+	--link: var(--blue-600);
+	--success-tint: color-mix(in srgb, var(--success) 10%, transparent);
+	--warning-tint: color-mix(in srgb, var(--warning) 10%, transparent);
+	--destructive-tint: color-mix(in srgb, var(--destructive) 10%, transparent);
+	--link-tint: color-mix(in srgb, var(--link) 10%, transparent);
+
+	/* Depth: hairline ring + soft shadow, never a CSS border on cards. */
+	--shadow-ring: 0 0 0 1px var(--alpha-black-5);
+	--shadow-xs: 0 1px 2px var(--alpha-black-6);
+	--shadow-border-xs: var(--shadow-xs), var(--shadow-ring);
+	--shadow-sm: 0 1px 6px var(--alpha-black-6), var(--shadow-ring);
+	--shadow-lg: 0 8px 24px var(--alpha-black-6), var(--shadow-ring);
+
+	/* Type. System fonts: zero bytes to download. */
 	--font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 	--font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
+	--text-2xs: 0.6875rem;
+	--text-xs: 0.75rem;
+	--text-sm: 0.875rem;
+	--text-base: 1rem;
+	--text-xl: 1.25rem;
+	--text-3xl: 1.875rem;
+	--leading: 1.5;
+	--weight-normal: 400;
+	--weight-medium: 500;
+	--weight-semibold: 600;
 
+	/* Spacing on a 4 px grid. */
 	--space-1: 0.25rem;
 	--space-2: 0.5rem;
 	--space-3: 0.75rem;
 	--space-4: 1rem;
+	--space-5: 1.25rem;
 	--space-6: 1.5rem;
 	--space-8: 2rem;
+	--space-10: 2.5rem;
 
-	--radius: 0.5rem;
-	--radius-lg: 0.75rem;
+	/* Shape. */
+	--radius-md: 0.5rem;
+	--radius-lg: 0.625rem;
+	--radius-xl: 0.75rem;
+	--radius-full: 9999px;
 
-	--bg: #f6f7f9;
-	--surface: #ffffff;
-	--border: #e2e5ea;
-	--text: #14171c;
-	--text-muted: #5b6370;
-	--accent: #0b6bcb;
-	--ok: #1a7f37;
-	--warn: #9a6700;
-	--danger: #c62828;
+	/* Layout. */
+	--touch: 2.75rem;
+	--rail-width: 5.25rem;
+	--tabbar-height: 3.5rem;
+	--gutter: var(--space-3);
+	--content-max: 80rem;
+
+	/* Motion. */
+	--duration-fast: 150ms;
+	--duration-layout: 300ms;
+}
+
+@media (min-width: 1024px) {
+	:root {
+		--gutter: var(--space-10);
+	}
 }
 
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']) {
-		--bg: #0f1115;
-		--surface: #171a20;
-		--border: #262b33;
-		--text: #e7eaee;
-		--text-muted: #98a1ad;
-		--accent: #4ea1ff;
-		--ok: #3fb950;
-		--warn: #d29922;
-		--danger: #f26b6b;
+		color-scheme: dark;
+		--surface: var(--black);
+		--surface-hover: var(--gray-800);
+		--surface-inset: var(--gray-800);
+		--container: var(--gray-900);
+		--container-hover: var(--gray-800);
+		--container-inset: var(--gray-800);
+		--container-inset-hover: var(--gray-700);
+		--overlay: var(--alpha-black-85);
+		--text-primary: var(--white);
+		--text-secondary: var(--gray-300);
+		--text-subdued: var(--gray-400);
+		--border-primary: var(--alpha-white-30);
+		--border-secondary: var(--alpha-white-20);
+		--border-subdued: var(--alpha-white-10);
+		--focus-ring: var(--alpha-white-50);
+		--focus-halo: var(--alpha-white-15);
+		--nav-indicator: var(--white);
+		--button-primary-bg: var(--white);
+		--button-primary-text: var(--black);
+		--success: var(--green-400);
+		--warning: var(--yellow-400);
+		--destructive: var(--red-400);
+		--link: var(--blue-500);
+		--shadow-ring: 0 0 0 1px var(--alpha-white-10);
+		--shadow-xs: 0 1px 2px var(--alpha-white-8);
+		--shadow-sm: 0 1px 6px var(--alpha-white-8), var(--shadow-ring);
+		--shadow-lg: 0 8px 24px var(--alpha-white-8), var(--shadow-ring);
 	}
 }
 
 :root[data-theme='dark'] {
-	--bg: #0f1115;
-	--surface: #171a20;
-	--border: #262b33;
-	--text: #e7eaee;
-	--text-muted: #98a1ad;
-	--accent: #4ea1ff;
-	--ok: #3fb950;
-	--warn: #d29922;
-	--danger: #f26b6b;
-}
-
-*,
-*::before,
-*::after {
-	box-sizing: border-box;
-}
-
-body {
-	margin: 0;
-	background: var(--bg);
-	color: var(--text);
-	font: 15px/1.5 var(--font-sans);
-	-webkit-font-smoothing: antialiased;
-}
-
-/* The wrapper in app.html; a class, not an inline style, so the CSP needs no 'unsafe-inline'. */
-.app-root {
-	display: contents;
+	color-scheme: dark;
+	--surface: var(--black);
+	--surface-hover: var(--gray-800);
+	--surface-inset: var(--gray-800);
+	--container: var(--gray-900);
+	--container-hover: var(--gray-800);
+	--container-inset: var(--gray-800);
+	--container-inset-hover: var(--gray-700);
+	--overlay: var(--alpha-black-85);
+	--text-primary: var(--white);
+	--text-secondary: var(--gray-300);
+	--text-subdued: var(--gray-400);
+	--border-primary: var(--alpha-white-30);
+	--border-secondary: var(--alpha-white-20);
+	--border-subdued: var(--alpha-white-10);
+	--focus-ring: var(--alpha-white-50);
+	--focus-halo: var(--alpha-white-15);
+	--nav-indicator: var(--white);
+	--button-primary-bg: var(--white);
+	--button-primary-text: var(--black);
+	--success: var(--green-400);
+	--warning: var(--yellow-400);
+	--destructive: var(--red-400);
+	--link: var(--blue-500);
+	--shadow-ring: 0 0 0 1px var(--alpha-white-10);
+	--shadow-xs: 0 1px 2px var(--alpha-white-8);
+	--shadow-sm: 0 1px 6px var(--alpha-white-8), var(--shadow-ring);
+	--shadow-lg: 0 8px 24px var(--alpha-white-8), var(--shadow-ring);
 }

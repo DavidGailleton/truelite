@@ -1,5 +1,6 @@
 <script lang="ts">
 	// Temporary live check of the WebSocket client; the dashboard (phase 3) replaces it.
+	import PageHeader from '#lib/components/PageHeader.svelte';
 	import { nas, useTopic } from '#lib/nas.svelte.js';
 
 	type Health = { status: string; version: string };
@@ -39,9 +40,8 @@
 	});
 </script>
 
-<main>
-	<h1>{info?.hostname ?? 'truelite'}</h1>
-	<p class="muted">A light web interface for TrueNAS.</p>
+<PageHeader title={info?.hostname ?? 'Dashboard'} subtitle="A light web interface for TrueNAS." />
+<section class="card">
 	{#if health}
 		<p class="ok">Server {health.status} · v{health.version}</p>
 	{:else if healthError}
@@ -56,24 +56,28 @@
 	{:else}
 		<p class="muted">Connecting to NAS…</p>
 	{/if}
-</main>
+</section>
 
 <style>
-	main {
-		max-width: 40rem;
-		margin: 0 auto;
-		padding: var(--space-8) var(--space-4);
+	.card {
+		padding: var(--space-5);
+		border-radius: var(--radius-xl);
+		background: var(--container);
+		box-shadow: var(--shadow-border-xs);
 	}
-	h1 {
-		margin: 0 0 var(--space-1);
+	p {
+		margin: 0 0 var(--space-2);
+	}
+	p:last-child {
+		margin-bottom: 0;
 	}
 	.muted {
-		color: var(--text-muted);
+		color: var(--text-secondary);
 	}
 	.ok {
-		color: var(--ok);
+		color: var(--success);
 	}
 	.danger {
-		color: var(--danger);
+		color: var(--destructive);
 	}
 </style>
