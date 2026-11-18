@@ -20,12 +20,13 @@ const VIRTUAL_PREFIXES: &[&str] = &[
     "lo", "veth", "vnet", "tap", "docker", "br-", "virbr", "kube", "cni", "flannel",
 ];
 
-/// Only the fields read; serde skips the rest, so new TrueNAS fields don't break this.
+/// Only the fields read; serde skips the rest, so new TrueNAS fields don't break this. Cores and
+/// interfaces are parsed one by one ([`entries`]): one odd entry is skipped, not the whole sample.
 #[derive(Deserialize)]
 struct Raw {
-    cpu: HashMap<String, RawCpu>,
+    cpu: HashMap<String, Value>,
     memory: RawMemory,
-    interfaces: HashMap<String, RawIface>,
+    interfaces: HashMap<String, Value>,
 }
 
 #[derive(Deserialize)]
@@ -42,15 +43,17 @@ struct RawMemory {
     arc_size: u64,
 }
 
+/// Missing or `null` fields read as down / unknown / 0 (bonds, VLANs and tunnels report less).
 #[derive(Deserialize)]
 struct RawIface {
-    link_state: String,
+    #[serde(default)]
+    link_state: Option<String>,
     #[serde(default)]
     speed: Option<f64>,
     #[serde(default)]
-    received_bytes_rate: f64,
+    received_bytes_rate: Option<f64>,
     #[serde(default)]
-    sent_bytes_rate: f64,
+    sent_bytes_rate: Option<f64>,
 }
 
 /// What the browser receives, documented in `docs/ws-protocol.md`.
@@ -87,24 +90,23 @@ struct Iface {
 /// payload does not have the documented shape.
 pub fn compact(fields: &Value) -> Option<Value> {
     let raw = Raw::deserialize(fields).ok()?;
-    let total = raw.cpu.get("cpu")?;
+    let cpu: HashMap<String, RawCpu> = entries(raw.cpu);
+    let total = cpu.get("cpu")?;
     // The aggregate often has no temperature; the hottest core is what matters then.
     let temp = total.temp.or_else(|| {
-        raw.cpu
-            .iter()
+        cpu.iter()
             .filter(|(name, _)| *name != "cpu")
             .filter_map(|(_, c)| c.temp)
             .max_by(f64::total_cmp)
     });
-    let net = raw
-        .interfaces
+    let net = entries::<RawIface>(raw.interfaces)
         .into_iter()
         .filter(|(name, _)| !VIRTUAL_PREFIXES.iter().any(|p| name.starts_with(p)))
         .map(|(name, i)| {
             let iface = Iface {
-                rx: rate(i.received_bytes_rate),
-                tx: rate(i.sent_bytes_rate),
-                up: i.link_state == "LINK_STATE_UP",
+                rx: rate(i.received_bytes_rate.unwrap_or(0.0)),
+                tx: rate(i.sent_bytes_rate.unwrap_or(0.0)),
+                up: i.link_state.as_deref() == Some("LINK_STATE_UP"),
                 speed: i.speed.filter(|s| *s > 0.0).map(rate),
             };
             (name, iface)
@@ -121,6 +123,13 @@ pub fn compact(fields: &Value) -> Option<Value> {
         net,
     };
     serde_json::to_value(out).ok()
+}
+
+/// The entries of `map` that have the expected shape; the others are left out.
+fn entries<T: for<'de> Deserialize<'de>>(map: HashMap<String, Value>) -> HashMap<String, T> {
+    map.into_iter()
+        .filter_map(|(name, v)| Some((name, T::deserialize(v).ok()?)))
+        .collect()
 }
 
 /// A non-negative rate rounded to a whole number (sub-byte precision is noise on the wire).
@@ -195,6 +204,28 @@ mod tests {
         let mut bad_memory = fixture();
         bad_memory["memory"]["arc_size"] = json!("lots");
         assert_eq!(compact(&bad_memory), None);
+    }
+
+    #[test]
+    fn one_odd_interface_or_core_does_not_drop_the_sample() {
+        let mut f = fixture();
+        f["interfaces"]["enp3s0"]["link_state"] = Value::Null;
+        f["interfaces"]["enp3s0"]["sent_bytes_rate"] = Value::Null;
+        f["interfaces"]["enp4s0"] = json!("not an interface");
+        f["interfaces"]["wg0"] = json!({});
+        f["cpu"]["cpu0"].as_object_mut().unwrap().remove("usage");
+        let out = compact(&f).unwrap();
+        assert_eq!(out["cpu"], json!(12.3));
+        assert_eq!(
+            out["net"]["enp3s0"],
+            json!({"rx": 1250, "tx": 0, "up": false, "speed": 1000})
+        );
+        assert!(out["net"].get("enp4s0").is_none());
+        assert_eq!(
+            out["net"]["wg0"],
+            json!({"rx": 0, "tx": 0, "up": false, "speed": null})
+        );
+        assert_eq!(out["net"]["br0"]["up"], json!(true));
     }
 
     #[test]
