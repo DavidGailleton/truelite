@@ -20,6 +20,8 @@ pub const FIELDS: &[&str] = &[
     "upgrade_available",
     "image_updates_available",
     "custom_app",
+    "version",
+    "human_version",
 ];
 
 /// The app with only [`FIELDS`]; `None` when `fields` is not an object.

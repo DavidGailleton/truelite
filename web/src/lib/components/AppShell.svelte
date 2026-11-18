@@ -98,7 +98,7 @@
 					</p>
 					<fieldset class="theme">
 						<legend>Theme</legend>
-						<div class="segments">
+						<div class="segments menu-segments">
 							{#each THEME_OPTIONS as option (option.value)}
 								<label class="segment">
 									<input
@@ -263,49 +263,13 @@
 		border: 0;
 		border-bottom: 1px solid var(--border-subdued);
 	}
+	.menu-segments {
+		margin: 0 var(--space-1);
+	}
 	.theme legend {
 		padding: var(--space-1) var(--space-3);
 		color: var(--text-secondary);
 		font-size: var(--text-xs);
-	}
-	.segments {
-		display: flex;
-		gap: 0.125rem;
-		margin: 0 var(--space-1);
-		padding: 0.125rem;
-		border-radius: var(--radius-lg);
-		background: var(--container-inset);
-	}
-	.segment {
-		position: relative;
-		display: flex;
-		flex: 1;
-		align-items: center;
-		justify-content: center;
-		gap: var(--space-1);
-		min-width: 0;
-		min-height: 2.25rem;
-		padding: 0 var(--space-2);
-		border-radius: var(--radius-md);
-		color: var(--text-secondary);
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-		cursor: pointer;
-		user-select: none;
-		transition:
-			background-color var(--duration-fast),
-			color var(--duration-fast);
-	}
-	.segment:hover {
-		color: var(--text-primary);
-	}
-	.segment:has(input:checked) {
-		background: var(--container);
-		box-shadow: var(--shadow-border-xs);
-		color: var(--text-primary);
-	}
-	.segment:has(input:focus-visible) {
-		outline: 2px solid var(--focus-ring);
 	}
 	.menu-item {
 		display: flex;
@@ -331,8 +295,7 @@
 		cursor: progress;
 	}
 	@media (pointer: coarse) {
-		.menu-item,
-		.segment {
+		.menu-item {
 			min-height: var(--touch);
 		}
 	}

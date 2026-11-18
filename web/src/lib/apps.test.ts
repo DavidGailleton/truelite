@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { applyAppEvent, parseApp, parseApps, summarize, type App } from './apps';
+import {
+	appVersion,
+	applyAppEvent,
+	filterApps,
+	filterCounts,
+	parseApp,
+	parseApps,
+	parseFilter,
+	sortApps,
+	stateLabel,
+	summarize,
+	type App
+} from './apps';
 
 const raw = (over: Record<string, unknown> = {}) => ({
 	id: 'jellyfin',
@@ -8,6 +20,8 @@ const raw = (over: Record<string, unknown> = {}) => ({
 	upgrade_available: false,
 	image_updates_available: false,
 	custom_app: false,
+	version: '1.3.1',
+	human_version: '10.11.2_1.3.1',
 	...over
 });
 
@@ -16,7 +30,8 @@ const app = (id: string, state: App['state'], updateAvailable = false): App => (
 	name: id,
 	state,
 	updateAvailable,
-	custom: false
+	custom: false,
+	version: null
 });
 
 describe('parseApp', () => {
@@ -26,7 +41,8 @@ describe('parseApp', () => {
 			name: 'jellyfin',
 			state: 'running',
 			updateAvailable: false,
-			custom: true
+			custom: true,
+			version: '10.11.2'
 		});
 	});
 
@@ -106,5 +122,90 @@ describe('summarize', () => {
 
 	it('is all zeros for no apps', () => {
 		expect(summarize([])).toEqual({ running: 0, stopped: 0, starting: 0, updates: 0, crashed: [] });
+	});
+});
+
+describe('appVersion', () => {
+	it('drops the catalog revision', () => {
+		expect(appVersion('10.11.2_1.3.1', '1.3.1')).toBe('10.11.2');
+	});
+
+	it('keeps a version without that suffix', () => {
+		expect(appVersion('1.0.0', '1.0.0')).toBe('1.0.0');
+		expect(appVersion('10.11.2_1.3.1', '1.3.2')).toBe('10.11.2_1.3.1');
+		expect(appVersion('2.0_beta', '')).toBe('2.0_beta');
+		expect(appVersion('_1.3.1', '1.3.1')).toBe('_1.3.1');
+	});
+
+	it('falls back to the revision, then nothing', () => {
+		expect(appVersion(undefined, '1.3.1')).toBe('1.3.1');
+		expect(appVersion('', ' ')).toBeNull();
+		expect(appVersion(null, 3)).toBeNull();
+	});
+});
+
+describe('filters', () => {
+	const list = [
+		app('Jellyfin', 'running', true),
+		app('immich', 'crashed'),
+		app('plex', 'stopped', true),
+		app('nextcloud', 'deploying'),
+		app('jelly-two', 'running')
+	];
+	const ids = (l: App[]) => l.map((a) => a.id);
+
+	it('filters by state and update', () => {
+		expect(ids(filterApps(list, 'all', ''))).toEqual(ids(list));
+		expect(ids(filterApps(list, 'running', ''))).toEqual(['Jellyfin', 'jelly-two']);
+		expect(ids(filterApps(list, 'not-running', ''))).toEqual(['immich', 'plex', 'nextcloud']);
+		expect(ids(filterApps(list, 'updates', ''))).toEqual(['Jellyfin', 'plex']);
+	});
+
+	it('searches names in any case, within the filter', () => {
+		expect(ids(filterApps(list, 'all', '  JELLY '))).toEqual(['Jellyfin', 'jelly-two']);
+		expect(ids(filterApps(list, 'updates', 'jelly'))).toEqual(['Jellyfin']);
+		expect(filterApps(list, 'running', 'plex')).toEqual([]);
+	});
+
+	it('counts each filter', () => {
+		expect(filterCounts(list)).toEqual({ all: 5, running: 2, 'not-running': 3, updates: 2 });
+		expect(filterCounts([])).toEqual({ all: 0, running: 0, 'not-running': 0, updates: 0 });
+	});
+
+	it('reads the URL value', () => {
+		expect(parseFilter('updates')).toBe('updates');
+		expect(parseFilter('not-running')).toBe('not-running');
+		expect(parseFilter('nope')).toBe('all');
+		expect(parseFilter(null)).toBe('all');
+	});
+});
+
+describe('sortApps', () => {
+	it('puts crashed, then starting or stopping, first; by name inside', () => {
+		const sorted = sortApps([
+			app('b', 'running'),
+			app('z', 'crashed'),
+			app('a', 'stopped'),
+			app('s', 'stopping'),
+			app('d', 'deploying'),
+			app('c', 'crashed')
+		]);
+		expect(sorted.map((a) => a.id)).toEqual(['c', 'z', 'd', 's', 'a', 'b']);
+	});
+
+	it('leaves the input alone', () => {
+		const list = [app('b', 'running'), app('a', 'running')];
+		sortApps(list);
+		expect(list.map((a) => a.id)).toEqual(['b', 'a']);
+	});
+});
+
+describe('stateLabel', () => {
+	it('names every state in words', () => {
+		expect(stateLabel('running')).toEqual({ label: 'Running', tone: 'success', dot: true });
+		expect(stateLabel('crashed').tone).toBe('destructive');
+		expect(stateLabel('deploying').label).toBe('Starting…');
+		expect(stateLabel('stopping').label).toBe('Stopping…');
+		expect(stateLabel('stopped').tone).toBe('neutral');
 	});
 });

@@ -7,6 +7,7 @@
 	import Card from './Card.svelte';
 	import CardBadge from './CardBadge.svelte';
 	import CardNotice from './CardNotice.svelte';
+	import StatusPill from './StatusPill.svelte';
 
 	let { onretry }: { onretry: () => void } = $props();
 
@@ -22,7 +23,12 @@
 	);
 </script>
 
-{#snippet badge()}<CardBadge {view} />{/snippet}
+{#snippet badge()}
+	<span class="header-end">
+		<CardBadge {view} />
+		{#if view.kind === 'ready'}<a class="all" href="/apps">See all</a>{/if}
+	</span>
+{/snippet}
 
 <Card title="Apps" icon="box" control={badge}>
 	<CardNotice
@@ -46,7 +52,13 @@
 				</div>
 				<div class={{ warning: summary.updates > 0 }}>
 					<dt>{summary.updates === 1 ? 'Update' : 'Updates'}</dt>
-					<dd>{summary.updates}</dd>
+					<dd>
+						{#if summary.updates > 0}
+							<a href="/apps?show=updates" aria-label="{summary.updates} apps with an update">
+								{summary.updates}
+							</a>
+						{:else}0{/if}
+					</dd>
 				</div>
 			</dl>
 			{#if summary.crashed.length > 0}
@@ -54,7 +66,7 @@
 					{#each summary.crashed as app (app.id)}
 						<li>
 							<span class="name">{app.name}</span>
-							<span class="status"><span class="dot" aria-hidden="true"></span>Crashed</span>
+							<StatusPill label="Crashed" tone="destructive" />
 						</li>
 					{/each}
 				</ul>
@@ -139,23 +151,24 @@
 		font-weight: var(--weight-medium);
 		overflow-wrap: anywhere;
 	}
-	.status {
-		display: inline-flex;
+	.header-end {
+		display: flex;
 		align-items: center;
-		gap: var(--space-1);
-		padding: 0 var(--space-2);
-		border: 1px solid currentColor;
-		border-radius: var(--radius-full);
-		background: var(--destructive-tint);
-		color: var(--destructive);
-		font-size: var(--text-xs);
-		white-space: nowrap;
+		gap: var(--space-2);
 	}
-	.dot {
-		width: 0.375rem;
-		height: 0.375rem;
-		border-radius: var(--radius-full);
-		background: currentColor;
+	.all {
+		color: var(--text-secondary);
+		font-size: var(--text-sm);
+	}
+	.all:hover,
+	dd a:hover {
+		color: var(--text-primary);
+	}
+	dd a {
+		color: inherit;
+		text-decoration: underline;
+		text-decoration-thickness: 1px;
+		text-underline-offset: 0.2em;
 	}
 
 	.skeleton.number {
