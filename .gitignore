@@ -1,8 +1,3 @@
 /server/target
 .env
 .DS_Store
-
-# Locally installed agent skills (not part of the project)
-/.agents/
-/.claude/skills/
-/skills-lock.json
