@@ -190,9 +190,26 @@ pub enum LoginError {
     Busy,
     /// A wrong one-time code; the login still waits for the right one.
     WrongCode,
-    /// No login is waiting for a code under this ticket (expired, used, or too many wrong
-    /// codes): start again. Deletes the ticket cookie.
-    StartAgain,
+    /// No login is waiting for a code under this ticket: start again. Deletes the ticket cookie.
+    StartAgain(Restart),
+}
+
+/// Why a login has to start again from the password; tells the user in the `reason` field.
+#[derive(Debug, Clone, Copy)]
+pub enum Restart {
+    /// No ticket, or the ticket expired or was already used.
+    Expired,
+    /// Too many wrong codes, here or on the NAS.
+    TooManyCodes,
+}
+
+impl Restart {
+    fn as_str(self) -> &'static str {
+        match self {
+            Restart::Expired => "expired",
+            Restart::TooManyCodes => "too_many_codes",
+        }
+    }
 }
 
 impl LoginError {
@@ -249,11 +266,11 @@ impl IntoResponse for LoginError {
                 let body = json!({ "error": "wrong code", "otp_required": true });
                 return (StatusCode::UNAUTHORIZED, Json(body)).into_response();
             }
-            LoginError::StartAgain => {
+            LoginError::StartAgain(why) => {
                 return (
                     StatusCode::UNAUTHORIZED,
                     [(header::SET_COOKIE, clear_otp_cookie())],
-                    Json(json!({ "error": "log in again" })),
+                    Json(json!({ "error": "log in again", "reason": why.as_str() })),
                 )
                     .into_response();
             }
@@ -351,15 +368,20 @@ pub async fn otp(
     if !(6..=8).contains(&code.len()) || !code.bytes().all(|b| b.is_ascii_digit()) {
         return Err(LoginError::BadRequest);
     }
-    let ticket = named_cookie(&headers, OTP_COOKIE).ok_or(LoginError::StartAgain)?;
+    let ticket =
+        named_cookie(&headers, OTP_COOKIE).ok_or(LoginError::StartAgain(Restart::Expired))?;
     login.check_rate(addr)?;
-    let (key, mut pending) = login.take(ticket).ok_or(LoginError::StartAgain)?;
+    let (key, mut pending) = login
+        .take(ticket)
+        .ok_or(LoginError::StartAgain(Restart::Expired))?;
     // The pending login is now out of the store: anything but a wrong code ends it, so every
     // other outcome also deletes the ticket cookie.
     let step = match tokio::time::timeout(LOGIN_TIMEOUT, pending.otp.submit(code)).await {
         Err(_) => return Ok(ended(LoginError::TimedOut)),
         // TrueNAS gave up on this login (too many wrong codes on its side).
-        Ok(Err(truenas::Error::Auth(_))) => return Err(LoginError::StartAgain),
+        Ok(Err(truenas::Error::Auth(_))) => {
+            return Err(LoginError::StartAgain(Restart::TooManyCodes));
+        }
         Ok(Err(e)) => return Ok(ended(LoginError::from_nas(e))),
         Ok(Ok(step)) => step,
     };
@@ -377,7 +399,7 @@ pub async fn otp(
             pending.wrong += 1;
             if pending.wrong >= MAX_WRONG_CODES {
                 tracing::info!(user = %pending.otp.username(), "too many wrong codes");
-                return Err(LoginError::StartAgain);
+                return Err(LoginError::StartAgain(Restart::TooManyCodes));
             }
             login.put_back(key, pending);
             Err(LoginError::WrongCode)
@@ -596,6 +618,7 @@ mod tests {
         }
         let r = h.code(&ticket, "000000").await;
         assert_eq!(r.body["error"], "log in again");
+        assert_eq!(r.body["reason"], "too_many_codes");
         assert_eq!(r.cookie(OTP_COOKIE).as_deref(), Some(""));
         assert_eq!(h.state.login.pending(), 0);
         assert_eq!(
@@ -609,6 +632,7 @@ mod tests {
         let h = Harness::new().await;
         let r = h.code(&"a".repeat(64), "123456").await;
         assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(r.body["reason"], "expired");
         assert_eq!(r.cookie(OTP_COOKIE).as_deref(), Some(""));
 
         let ticket = h
