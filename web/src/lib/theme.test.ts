@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { applyTheme, parseTheme, readTheme, THEME_KEY, themeColorMedia, writeTheme } from './theme';
+import {
+	applyTheme,
+	parseTheme,
+	readTheme,
+	resolveTheme,
+	THEME_KEY,
+	themeColorMedia,
+	toggledTheme,
+	writeTheme
+} from './theme';
 
 function memoryStorage(initial: Record<string, string> = {}) {
 	const data = new Map(Object.entries(initial));
@@ -76,5 +85,21 @@ describe('themeColorMedia', () => {
 		]);
 		expect(themeColorMedia('light')).toEqual(['all', 'not all']);
 		expect(themeColorMedia('dark')).toEqual(['not all', 'all']);
+	});
+});
+
+describe('resolveTheme / toggledTheme', () => {
+	it('resolves system through the OS preference', () => {
+		expect(resolveTheme('system', true)).toBe('dark');
+		expect(resolveTheme('system', false)).toBe('light');
+		expect(toggledTheme('system', true)).toBe('light');
+		expect(toggledTheme('system', false)).toBe('dark');
+	});
+
+	it('keeps an explicit choice whatever the OS says', () => {
+		expect(resolveTheme('dark', false)).toBe('dark');
+		expect(resolveTheme('light', true)).toBe('light');
+		expect(toggledTheme('dark', false)).toBe('light');
+		expect(toggledTheme('light', true)).toBe('dark');
 	});
 });

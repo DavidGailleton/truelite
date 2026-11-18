@@ -83,7 +83,8 @@ glow (8 % white) and rings switch to white alpha. The primary button inverts to 
 text**. Toggle with `[data-theme]` on `<html>`, default from `prefers-color-scheme`. In truelite
 the account menu offers System / Light / Dark, stored per browser in `localStorage`
 (`truelite-theme`, absent = System) and applied by an inline script in `app.html` before first
-paint, so a reload never flashes the wrong theme.
+paint, so a reload never flashes the wrong theme. A sun/moon icon button at the top right of every page (and of
+the log-in page) flips between light and dark in one click; going back to System is in the menu.
 
 ## 3. Typography
 

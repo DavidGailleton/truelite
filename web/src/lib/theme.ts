@@ -53,3 +53,14 @@ export function themeColorMedia(theme: Theme): [light: string, dark: string] {
 	if (theme === 'dark') return ['not all', 'all'];
 	return [LIGHT_QUERY, DARK_QUERY];
 }
+
+/** The theme on screen: "system" resolves through the OS preference. */
+export function resolveTheme(theme: Theme, prefersDark: boolean): 'light' | 'dark' {
+	if (theme === 'system') return prefersDark ? 'dark' : 'light';
+	return theme;
+}
+
+/** What the one-click sun/moon button switches to: the opposite of what is on screen. */
+export function toggledTheme(theme: Theme, prefersDark: boolean): 'light' | 'dark' {
+	return resolveTheme(theme, prefersDark) === 'dark' ? 'light' : 'dark';
+}

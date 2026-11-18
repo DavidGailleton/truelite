@@ -6,6 +6,7 @@
 	import { page } from '$app/state';
 	import Icon from '#lib/components/Icon.svelte';
 	import Logo from '#lib/components/Logo.svelte';
+	import ThemeToggle from '#lib/components/ThemeToggle.svelte';
 	import { loginWithCode, loginWithPassword, safeNext, type LoginResult } from '#lib/login.js';
 	import { setSession } from '#lib/session.svelte.js';
 
@@ -88,6 +89,7 @@
 </svelte:head>
 
 <main class="page">
+	<div class="toggle"><ThemeToggle /></div>
 	<div class="card">
 		<header>
 			<Logo size={40} />
@@ -180,6 +182,7 @@
 
 <style>
 	.page {
+		position: relative;
 		display: grid;
 		place-items: center;
 		min-height: 100dvh;
@@ -188,6 +191,11 @@
 			max(var(--space-6), env(safe-area-inset-bottom))
 			max(var(--space-4), env(safe-area-inset-left));
 		background: var(--surface);
+	}
+	.toggle {
+		position: absolute;
+		top: max(var(--space-3), env(safe-area-inset-top));
+		right: max(var(--space-3), env(safe-area-inset-right));
 	}
 	.card {
 		display: flex;
