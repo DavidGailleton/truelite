@@ -17,7 +17,7 @@ use tokio::time::Instant;
 use super::auth::{self, Secret, UserInfo};
 use super::client::{Client, Notification, Options};
 use super::error::{AuthFailure, Error};
-use super::events::{Release, Subscription, Topics};
+use super::events::{Release, Subscription, TopicOptions, Topics};
 use super::tls::{Fingerprint, client_config};
 
 /// Where the NAS is and how to trust it.
@@ -114,8 +114,7 @@ enum Cmd {
     Logout(oneshot::Sender<()>),
     Subscribe {
         name: String,
-        /// Events kept for a slow consumer; `None` = [`SessionOptions::event_buffer`].
-        buffer: Option<usize>,
+        opts: TopicOptions,
         reply: oneshot::Sender<Result<Subscription, Error>>,
     },
     #[cfg(test)]
@@ -251,20 +250,20 @@ impl Session {
     /// [`Error::Rpc`] when the NAS refuses the event (unknown, or a role is missing),
     /// [`Error::LoggedOut`] when the session has ended, and the errors of [`Session::call`].
     pub async fn subscribe(&self, event: &str) -> Result<Subscription, Error> {
-        self.subscribe_with_buffer(event, None).await
+        self.subscribe_with(event, TopicOptions::default()).await
     }
 
-    /// [`subscribe`](Self::subscribe), keeping up to `buffer` events for a slow consumer instead
-    /// of [`SessionOptions::event_buffer`], for a stream that comes in bursts (a log tail). Only
-    /// the handle that creates the topic sets it.
+    /// [`subscribe`](Self::subscribe) with the topic kept as `opts` says: a bigger buffer for a
+    /// stream that comes in bursts, a replay for one whose history only the first subscriber
+    /// gets (a log tail). Only the handle that creates the topic sets them.
     ///
     /// # Errors
     ///
     /// As [`subscribe`](Self::subscribe).
-    pub async fn subscribe_with_buffer(
+    pub async fn subscribe_with(
         &self,
         event: &str,
-        buffer: Option<usize>,
+        opts: TopicOptions,
     ) -> Result<Subscription, Error> {
         self.client().await?;
         let (reply, rx) = oneshot::channel();
@@ -272,7 +271,7 @@ impl Session {
             .cmds
             .send(Cmd::Subscribe {
                 name: event.to_owned(),
-                buffer,
+                opts,
                 reply,
             })
             .await
@@ -371,16 +370,15 @@ impl Supervisor {
                 // The client's actor drops the notification sender when its socket closes, so
                 // `None` here is the disconnect signal, after buffered events are delivered.
                 n = notifs.recv() => match n {
-                    Some(n) => {
-                        let Some(n) = self.topics.dispatch(n) else { continue };
-                        if let Err(mpsc::error::TrySendError::Full(n)) = self.out.try_send(n) {
-                            tracing::warn!("session notification buffer full, dropping {}", n.method);
-                        }
-                    }
+                    Some(n) => self.deliver(client, n),
                     None => return Disconnect::Dropped,
                 },
-                Some(r) = self.releases.recv() => self.release(Some(client), r).await,
-                _ = refresh.tick() => self.refresh_token(client).await,
+                Some(r) = self.releases.recv() => self.release(Some((client, &mut *notifs)), r).await,
+                _ = refresh.tick() => {
+                    let ttl = ttl_secs(&self.opts);
+                    let res = self.draining(client, notifs, auth::generate_token(client, ttl)).await;
+                    self.new_token(res);
+                }
                 cmd = self.cmds.recv() => match cmd {
                     Some(Cmd::Logout(done)) => {
                         let res = client.call("auth.logout", json!([])).await;
@@ -391,8 +389,8 @@ impl Supervisor {
                         let _ = done.send(());
                         return Disconnect::Stop;
                     }
-                    Some(Cmd::Subscribe { name, buffer, reply }) => {
-                        let res = self.subscribe(Some(client), &name, buffer).await;
+                    Some(Cmd::Subscribe { name, opts, reply }) => {
+                        let res = self.subscribe(Some((client, &mut *notifs)), &name, opts).await;
                         let _ = reply.send(res);
                     }
                     #[cfg(test)]
@@ -406,8 +404,49 @@ impl Supervisor {
         }
     }
 
+    /// Passes on a notification: to its topic, else to [`Session::take_notifications`]. Reports
+    /// notifications the client dropped first, so every topic knows it has a gap.
+    fn deliver(&mut self, client: &Client, n: Notification) {
+        let lost = client.take_lost();
+        if lost > 0 {
+            tracing::warn!(lost, "NAS notifications were dropped; topics query again");
+            self.topics.missed_all(lost);
+        }
+        let Some(n) = self.topics.dispatch(n) else {
+            return;
+        };
+        if let Err(mpsc::error::TrySendError::Full(n)) = self.out.try_send(n) {
+            tracing::warn!("session notification buffer full, dropping {}", n.method);
+        }
+    }
+
+    /// Awaits `fut` (a call on `client`) while still delivering `client`'s notifications. A
+    /// `core.subscribe` that starts a stream with a history (a log tail) gets that history
+    /// before its reply; without this, the client's buffer would fill and drop events.
+    async fn draining<T>(
+        &mut self,
+        client: &Client,
+        notifs: &mut mpsc::Receiver<Notification>,
+        fut: impl Future<Output = T>,
+    ) -> T {
+        let mut fut = std::pin::pin!(fut);
+        loop {
+            tokio::select! {
+                out = &mut fut => return out,
+                // `None`: the socket closed; the call fails with it, and the caller's next
+                // `recv` sees the end.
+                Some(n) = notifs.recv() => self.deliver(client, n),
+            }
+        }
+    }
+
     async fn refresh_token(&mut self, client: &Client) {
-        match auth::generate_token(client, ttl_secs(&self.opts)).await {
+        let res = auth::generate_token(client, ttl_secs(&self.opts)).await;
+        self.new_token(res);
+    }
+
+    fn new_token(&mut self, res: Result<Secret, Error>) {
+        match res {
             Ok(token) => {
                 self.token = token;
                 self.token_at = Instant::now();
@@ -432,9 +471,9 @@ impl Supervisor {
             }
             self.link.send_replace(Link::Reconnecting { attempt });
             match self.attempt().await {
-                Ok((client, notifs)) => {
+                Ok((client, mut notifs)) => {
                     tracing::info!(attempt, "reconnected to the NAS");
-                    self.resubscribe(&client).await;
+                    self.resubscribe(&client, &mut notifs).await;
                     self.client.send_replace(Some(client.clone()));
                     self.link.send_replace(Link::Up);
                     return Some((client, notifs));
@@ -456,8 +495,8 @@ impl Supervisor {
                                 return None;
                             }
                             // Sent just before the link dropped: made upstream once back.
-                            Some(Cmd::Subscribe { name, buffer, reply }) => {
-                                let res = self.subscribe(None, &name, buffer).await;
+                            Some(Cmd::Subscribe { name, opts, reply }) => {
+                                let res = self.subscribe(None, &name, opts).await;
                                 let _ = reply.send(res);
                             }
                             #[cfg(test)]
@@ -499,40 +538,53 @@ impl Supervisor {
     /// disconnected: the topic is then subscribed by [`resubscribe`](Self::resubscribe).
     async fn subscribe(
         &mut self,
-        client: Option<&Client>,
+        conn: Option<(&Client, &mut mpsc::Receiver<Notification>)>,
         name: &str,
-        buffer: Option<usize>,
+        opts: TopicOptions,
     ) -> Result<Subscription, Error> {
         if let Some(sub) = self.topics.join(name) {
             return Ok(sub);
         }
-        let upstream = match client {
-            Some(c) => Some(c.call_as::<String>("core.subscribe", json!([name])).await?),
-            None => None,
-        };
+        // Registered first: a stream's history (a log tail) may come before the answer.
+        let sub = self.topics.insert(name, None, opts);
+        if let Some((c, notifs)) = conn {
+            let call = c.call_as::<String>("core.subscribe", json!([name]));
+            match self.draining(c, notifs, call).await {
+                Ok(id) => self.topics.subscribed(name, id),
+                Err(e) => {
+                    self.topics.remove(name);
+                    return Err(e);
+                }
+            }
+        }
         tracing::debug!(event = name, "subscribed");
-        Ok(self.topics.insert(name, upstream, buffer))
+        Ok(sub)
     }
 
-    async fn release(&mut self, client: Option<&Client>, r: Release) {
+    async fn release(
+        &mut self,
+        conn: Option<(&Client, &mut mpsc::Receiver<Notification>)>,
+        r: Release,
+    ) {
         let Some(id) = self.topics.release(r) else {
             return;
         };
-        if let Some(c) = client
-            && let Err(e) = c.call("core.unsubscribe", json!([id])).await
-        {
-            tracing::debug!("core.unsubscribe failed: {e}");
+        if let Some((c, notifs)) = conn {
+            let call = c.call("core.unsubscribe", json!([id]));
+            if let Err(e) = self.draining(c, notifs, call).await {
+                tracing::debug!("core.unsubscribe failed: {e}");
+            }
         }
     }
 
-    /// Makes every subscription again on a new connection.
-    async fn resubscribe(&mut self, client: &Client) {
+    /// Makes every subscription again on a new connection. Each one may start with a burst
+    /// (a log tail), so notifications keep flowing while the calls are awaited.
+    async fn resubscribe(&mut self, client: &Client, notifs: &mut mpsc::Receiver<Notification>) {
         for name in self.topics.names() {
-            match client
-                .call_as::<String>("core.subscribe", json!([&*name]))
-                .await
-            {
-                Ok(id) => self.topics.resumed(&name, id),
+            self.topics.resuming(&name);
+            let call = client.call_as::<String>("core.subscribe", json!([&*name]));
+            match self.draining(client, notifs, call).await {
+                Ok(id) => self.topics.subscribed(&name, id),
                 // Dropped again: the next reconnect retries.
                 Err(Error::Closed) => {}
                 Err(e) => {
@@ -1050,6 +1102,42 @@ mod tests {
         assert_eq!(update(next(&mut sub).await).id, Some(json!(4)));
     }
 
+    /// The next `count` events of `sub`, all updates, by their `n`; then nothing else waits.
+    async fn take(sub: &mut Subscription, count: u64) -> Vec<u64> {
+        let mut got = Vec::new();
+        for _ in 0..count {
+            got.push(update(next(sub).await).fields["n"].as_u64().unwrap());
+        }
+        assert!(sub.try_recv().is_none());
+        got
+    }
+
+    /// A history bigger than the client's notification buffer (256) comes whole, on subscribe
+    /// and when two such topics are made again after a reconnect; a later handle gets it too.
+    #[tokio::test]
+    async fn a_burst_bigger_than_the_client_buffer_arrives_whole() {
+        let (mock, _nas, ep) = start().await;
+        let s = admin(&ep, opts()).await;
+        let log = TopicOptions {
+            buffer: Some(512),
+            replay: 200,
+        };
+        let mut a = within(s.subscribe_with("burst:300", log)).await.unwrap();
+        assert_eq!(take(&mut a, 300).await, (0..300).collect::<Vec<_>>());
+        let mut b = within(s.subscribe_with("burst:250", log)).await.unwrap();
+        assert_eq!(take(&mut b, 250).await.len(), 250);
+
+        // A second handle joins: the NAS sends nothing, the topic replays its last 200.
+        let mut late = within(s.subscribe("burst:300")).await.unwrap();
+        assert_eq!(take(&mut late, 200).await, (100..300).collect::<Vec<_>>());
+
+        reconnected(&s, async { mock.kill() }).await;
+        for (sub, count) in [(&mut a, 300), (&mut late, 300), (&mut b, 250)] {
+            assert!(matches!(next(sub).await, Event::Resumed));
+            assert_eq!(take(sub, count).await, (0..count).collect::<Vec<_>>());
+        }
+    }
+
     #[tokio::test]
     async fn subscribing_while_reconnecting_waits_for_the_link() {
         let (mock, _nas, ep) = start().await;
@@ -1145,9 +1233,11 @@ mod tests {
         println!("{name} container {container}");
         let arg = json!({"app_name": name, "container_id": container, "tail_lines": 5});
         let topic = crate::truenas::apps::log_topic(&arg.to_string()).expect("ids truelite takes");
-        let mut sub = within(s.subscribe_with_buffer(&topic, Some(512)))
-            .await
-            .unwrap();
+        let opts = TopicOptions {
+            buffer: Some(512),
+            replay: 0,
+        };
+        let mut sub = within(s.subscribe_with(&topic, opts)).await.unwrap();
         for _ in 0..5 {
             let u = update(next(&mut sub).await);
             println!(

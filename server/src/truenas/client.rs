@@ -20,6 +20,12 @@ use super::tls::mismatch_in;
 
 type Reply = oneshot::Sender<Result<Value, Error>>;
 
+/// How long the connection waits for room in a full notification buffer before it drops a
+/// notification (and counts it, see [`Client::take_lost`]). Waiting slows the socket instead of
+/// losing a burst (a log tail); the limit keeps a consumer that stopped reading from stalling
+/// call replies for good.
+const NOTIFY_WAIT: Duration = Duration::from_secs(2);
+
 /// Server-to-client JSON-RPC notification (`collection_update`, `notify_unsubscribed`).
 /// `params` stays raw: the docs' schema and example disagree, event code interprets it.
 #[derive(Debug, Clone)]
@@ -34,7 +40,8 @@ pub struct Options {
     pub connect_timeout: Duration,
     /// Default timeout of `call`. Job methods use `call_with_timeout(.., None)`.
     pub call_timeout: Duration,
-    /// Notifications buffered for a slow consumer before new ones are dropped.
+    /// Notifications buffered for a slow consumer; when full, the connection waits up to
+    /// [`NOTIFY_WAIT`] for room, then drops them.
     pub notification_buffer: usize,
 }
 
@@ -71,6 +78,9 @@ struct Inner {
     tx: mpsc::Sender<Command>,
     next_id: AtomicU64,
     call_timeout: Duration,
+    /// Notifications dropped because the receiver was full, not yet reported by
+    /// [`Client::take_lost`].
+    lost: Arc<AtomicU64>,
     #[cfg_attr(not(test), expect(dead_code, reason = "only tests wait for the close"))]
     closed: watch::Receiver<bool>,
 }
@@ -108,17 +118,25 @@ impl Client {
         let (cmd_tx, cmd_rx) = mpsc::channel(64);
         let (notif_tx, notif_rx) = mpsc::channel(opts.notification_buffer.max(1));
         let (closed_tx, closed_rx) = watch::channel(false);
-        tokio::spawn(run(ws, cmd_rx, notif_tx, closed_tx));
+        let lost = Arc::new(AtomicU64::new(0));
+        tokio::spawn(run(ws, cmd_rx, notif_tx, lost.clone(), closed_tx));
 
         let client = Client {
             inner: Arc::new(Inner {
                 tx: cmd_tx,
                 next_id: AtomicU64::new(1),
                 call_timeout: opts.call_timeout,
+                lost,
                 closed: closed_rx,
             }),
         };
         Ok((client, notif_rx))
+    }
+
+    /// How many notifications were dropped since the last call, because the receiver was full.
+    /// Their events are gone: whoever follows them must query the state again.
+    pub fn take_lost(&self) -> u64 {
+        self.inner.lost.swap(0, Ordering::Relaxed)
     }
 
     /// Calls `method` with positional `params` (a JSON array) and the default timeout.
@@ -272,6 +290,7 @@ async fn run<S>(
     ws: tokio_tungstenite::WebSocketStream<S>,
     mut cmds: mpsc::Receiver<Command>,
     notifs: mpsc::Sender<Notification>,
+    lost: Arc<AtomicU64>,
     closed: watch::Sender<bool>,
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
@@ -300,7 +319,11 @@ async fn run<S>(
                 }
             },
             msg = stream.next() => match msg {
-                Some(Ok(Message::Text(t))) => handle(t.as_str(), &mut pending, &notifs),
+                Some(Ok(Message::Text(t))) => {
+                    if let Some(n) = handle(t.as_str(), &mut pending) {
+                        notify(&notifs, n, &lost).await;
+                    }
+                }
                 Some(Ok(Message::Close(_))) | None => break,
                 // Pings are answered by tungstenite; binary frames are not part of the API.
                 Some(Ok(_)) => {}
@@ -318,19 +341,38 @@ async fn run<S>(
     tracing::debug!("NAS connection closed");
 }
 
-fn handle(text: &str, pending: &mut HashMap<u64, Reply>, notifs: &mpsc::Sender<Notification>) {
+/// Hands a notification to the consumer, waiting up to [`NOTIFY_WAIT`] for room. Once one was
+/// dropped and not yet reported, later ones are not waited for: the consumer is stuck.
+async fn notify(notifs: &mpsc::Sender<Notification>, n: Notification, lost: &AtomicU64) {
+    let n = match notifs.try_send(n) {
+        Ok(()) | Err(mpsc::error::TrySendError::Closed(_)) => return,
+        Err(mpsc::error::TrySendError::Full(n)) => n,
+    };
+    if lost.load(Ordering::Relaxed) == 0 {
+        match tokio::time::timeout(NOTIFY_WAIT, notifs.send(n)).await {
+            Ok(_) => return,
+            Err(_) => tracing::warn!("notification buffer full, dropping a notification"),
+        }
+    } else {
+        tracing::debug!("notification buffer still full, dropping {}", n.method);
+    }
+    lost.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Answers a pending call, or gives back a notification for [`notify`].
+fn handle(text: &str, pending: &mut HashMap<u64, Reply>) -> Option<Notification> {
     let msg: Incoming = match serde_json::from_str(text) {
         Ok(m) => m,
         Err(e) => {
             tracing::warn!("unparsable message from the NAS: {e}");
-            return;
+            return None;
         }
     };
     match (msg.id, msg.method) {
         (Some(id), _) => {
             let Some(reply) = id.as_u64().and_then(|id| pending.remove(&id)) else {
                 tracing::debug!("reply with unknown id {id}");
-                return;
+                return None;
             };
             let res = match msg.error {
                 Some(e) if e.code == -32000 => Err(Error::TooManyCalls),
@@ -338,17 +380,16 @@ fn handle(text: &str, pending: &mut HashMap<u64, Reply>, notifs: &mpsc::Sender<N
                 None => Ok(msg.result.unwrap_or(Value::Null)),
             };
             let _ = reply.send(res);
+            None
         }
-        (None, Some(method)) => {
-            let n = Notification {
-                method,
-                params: msg.params,
-            };
-            if let Err(mpsc::error::TrySendError::Full(n)) = notifs.try_send(n) {
-                tracing::warn!("notification buffer full, dropping {}", n.method);
-            }
+        (None, Some(method)) => Some(Notification {
+            method,
+            params: msg.params,
+        }),
+        (None, None) => {
+            tracing::debug!("NAS message with neither id nor method");
+            None
         }
-        (None, None) => tracing::debug!("NAS message with neither id nor method"),
     }
 }
 
@@ -471,6 +512,33 @@ mod tests {
         let note = within(n.recv()).await.unwrap();
         assert_eq!(note.method, "collection_update");
         assert_eq!(note.params["collection"], "alert.list");
+    }
+
+    #[tokio::test]
+    async fn dropped_notifications_are_counted() {
+        let mock = Mock::start(standard).await;
+        let small = Options {
+            notification_buffer: 2,
+            ..opts(5000)
+        };
+        let (c, mut n) = Client::connect(&mock.url, None, small).await.unwrap();
+        for i in 0..5 {
+            mock.push(
+                json!({"jsonrpc":"2.0","method":"collection_update","params":{
+                "msg":"added","collection":"alert.list","id":i}}),
+            );
+        }
+        // Nobody reads: the third waits NOTIFY_WAIT, then it and the next ones are dropped
+        // without waiting. Answered after the pushes, so every notification was handled.
+        let started = std::time::Instant::now();
+        tokio::time::timeout(Duration::from_secs(5), c.call("core.ping", json!([])))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(started.elapsed() >= NOTIFY_WAIT);
+        assert_eq!(c.take_lost(), 3);
+        assert_eq!(c.take_lost(), 0);
+        assert_eq!(within(n.recv()).await.unwrap().params["id"], 0);
     }
 
     #[tokio::test]

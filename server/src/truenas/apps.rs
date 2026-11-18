@@ -51,8 +51,9 @@ pub fn compact(fields: &Value) -> Option<Value> {
 /// The container log event, without its arguments.
 pub const LOG_EVENT: &str = "app.container_log_follow";
 
-/// Most lines of history a log subscription may ask for. TrueNAS sends them in one burst; this
-/// stays under the client's notification buffer (256) while `core.subscribe` is awaited, and a
+/// Most lines of history a log subscription may ask for, and the lines a log topic replays to a
+/// later subscriber (TrueNAS sends the tail only to the first). The tail comes in one burst; the
+/// session keeps reading notifications while `core.subscribe` is awaited, so none is lost. A
 /// `null` (the whole log) is never allowed.
 pub const LOG_TAIL_MAX: u32 = 200;
 

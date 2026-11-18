@@ -427,6 +427,23 @@ pub fn fake_nas() -> (
                 json!({"code": -32001, "message": "Method call error", "data": {
                 "error": 13, "errname": "EACCES", "reason": "Not authorized"}}),
             ),
+            // `burst:N`: N events of the stream come before the answer, as a log tail does.
+            "core.subscribe" if p.as_str().is_some_and(|n| n.starts_with("burst:")) => {
+                nas.subscriptions += 1;
+                let name = p.as_str().unwrap_or_default();
+                let count: u32 = name["burst:".len()..].parse().unwrap_or(0);
+                let lines = (0..count)
+                    .map(|n| {
+                        json!({"jsonrpc": "2.0", "method": "collection_update", "params": {
+                            "msg": "added", "collection": name, "fields": {"n": n}}})
+                        .to_string()
+                    })
+                    .collect();
+                Reply::Seq(vec![
+                    Reply::Raw(lines),
+                    Reply::Result(json!(format!("sub-{}", nas.subscriptions))),
+                ])
+            }
             "core.subscribe" => {
                 nas.subscriptions += 1;
                 Reply::Result(json!(format!("sub-{}", nas.subscriptions)))
@@ -446,6 +463,12 @@ pub fn fake_nas() -> (
                     json!({"code": -32001, "message": "Method call error", "data": {
                 "error": 13, "errname": "EACCES", "reason": "Not authorized"}}),
                 )
+            }
+            // A job that never ends (an image pull that takes minutes).
+            "app.start" | "app.stop" | "app.redeploy" | "app.upgrade" | "app.pull_images"
+                if *p == "hang" =>
+            {
+                Reply::Ignore
             }
             "app.start" | "app.stop" | "app.redeploy" | "app.upgrade" | "app.pull_images" => {
                 let job = |id: u32, ids: &str, percent: u32| {

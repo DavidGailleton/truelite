@@ -5,7 +5,7 @@
 //! The NAS sends events as `collection_update` notifications that name the event in
 //! `collection`, not the subscription id, so they are routed by event name.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -46,6 +46,18 @@ pub enum Event {
     Ended(Arc<Error>),
 }
 
+/// How a topic keeps events, set by the handle that creates it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TopicOptions {
+    /// Events kept for a slow consumer before it gets [`Event::Missed`]; `None` = the session
+    /// default ([`SessionOptions::event_buffer`](super::SessionOptions::event_buffer)).
+    pub buffer: Option<usize>,
+    /// Last updates kept and replayed to a handle that joins the topic later. TrueNAS sends a
+    /// stream's history (a log tail) only to the subscription that starts it, so without this a
+    /// second tab, or a quick unsubscribe and subscribe again, would start empty. 0 = none.
+    pub replay: usize,
+}
+
 /// Sent by a dropped [`Subscription`]: event name and the generation of its topic, so a handle
 /// of an ended topic never releases a newer topic of the same name.
 pub(super) type Release = (Arc<str>, u64);
@@ -58,6 +70,8 @@ pub struct Subscription {
     name: Arc<str>,
     generation: u64,
     rx: broadcast::Receiver<Event>,
+    /// Updates from before this handle joined ([`TopicOptions::replay`]), received first.
+    backlog: VecDeque<Arc<Update>>,
     // Unbounded because `Drop` cannot wait; one small message per handle ever made.
     release: mpsc::UnboundedSender<Release>,
 }
@@ -70,6 +84,9 @@ impl Subscription {
 
     /// The next event; `None` once the subscription or the session has ended.
     pub async fn recv(&mut self) -> Option<Event> {
+        if let Some(u) = self.backlog.pop_front() {
+            return Some(Event::Update(u));
+        }
         match self.rx.recv().await {
             Ok(e) => Some(e),
             Err(broadcast::error::RecvError::Lagged(n)) => Some(Event::Missed(n)),
@@ -81,6 +98,9 @@ impl Subscription {
     /// burst. `None` when nothing is waiting or the subscription has ended (then
     /// [`recv`](Self::recv) says which).
     pub fn try_recv(&mut self) -> Option<Event> {
+        if let Some(u) = self.backlog.pop_front() {
+            return Some(Event::Update(u));
+        }
         match self.rx.try_recv() {
             Ok(e) => Some(e),
             Err(broadcast::error::TryRecvError::Lagged(n)) => Some(Event::Missed(n)),
@@ -105,6 +125,9 @@ struct Topic {
     upstream: Option<String>,
     refs: usize,
     generation: u64,
+    /// The last [`TopicOptions::replay`] updates, for handles that join later.
+    history: VecDeque<Arc<Update>>,
+    replay: usize,
 }
 
 /// The session's subscriptions, owned by its supervisor task.
@@ -135,20 +158,21 @@ impl Topics {
             name: topic.name.clone(),
             generation: topic.generation,
             rx: topic.tx.subscribe(),
+            backlog: topic.history.clone(),
             release: self.release.clone(),
         })
     }
 
     /// Registers a topic subscribed upstream as `upstream` (`None` while disconnected).
-    /// A new topic with its first handle. `buffer` overrides the default for this topic.
+    /// A new topic with its first handle, kept as `opts` says.
     pub(super) fn insert(
         &mut self,
         name: &str,
         upstream: Option<String>,
-        buffer: Option<usize>,
+        opts: TopicOptions,
     ) -> Subscription {
         let name: Arc<str> = Arc::from(name);
-        let (tx, rx) = broadcast::channel(buffer.unwrap_or(self.buffer).max(1));
+        let (tx, rx) = broadcast::channel(opts.buffer.unwrap_or(self.buffer).max(1));
         let generation = self.next_generation;
         self.next_generation += 1;
         self.map.insert(
@@ -159,12 +183,15 @@ impl Topics {
                 upstream,
                 refs: 1,
                 generation,
+                history: VecDeque::with_capacity(opts.replay),
+                replay: opts.replay,
             },
         );
         Subscription {
             name,
             generation,
             rx,
+            backlog: VecDeque::new(),
             release: self.release.clone(),
         }
     }
@@ -190,13 +217,18 @@ impl Topics {
         };
         match n.method.as_str() {
             "collection_update" => {
-                let Some(topic) = self.map.get(name) else {
+                let Some(topic) = self.map.get_mut(name) else {
                     return Some(n);
                 };
+                let update = Arc::new(parse_update(n.params));
+                if topic.replay > 0 {
+                    if topic.history.len() == topic.replay {
+                        topic.history.pop_front();
+                    }
+                    topic.history.push_back(update.clone());
+                }
                 // No receiver is fine: the last handle's release is on its way.
-                let _ = topic
-                    .tx
-                    .send(Event::Update(Arc::new(parse_update(n.params))));
+                let _ = topic.tx.send(Event::Update(update));
                 None
             }
             "notify_unsubscribed" if self.map.contains_key(name) => {
@@ -221,11 +253,36 @@ impl Topics {
         self.map.keys().cloned().collect()
     }
 
-    /// Subscribed again as `upstream` after a reconnect.
-    pub(super) fn resumed(&mut self, name: &str, upstream: String) {
+    /// Subscribed upstream as `upstream`, for a topic inserted before its `core.subscribe` was
+    /// answered (events that come before the answer then reach it).
+    pub(super) fn subscribed(&mut self, name: &str, upstream: String) {
         if let Some(topic) = self.map.get_mut(name) {
             topic.upstream = Some(upstream);
+        }
+    }
+
+    /// Forgets a topic whose `core.subscribe` failed; its handle is dropped by the caller.
+    pub(super) fn remove(&mut self, name: &str) {
+        self.map.remove(name);
+    }
+
+    /// Being subscribed again after a reconnect: handles get [`Event::Resumed`] before any
+    /// event of the new subscription (the history the NAS sends again may come before its
+    /// answer), then [`subscribed`](Self::subscribed) records the new id.
+    pub(super) fn resuming(&mut self, name: &str) {
+        if let Some(topic) = self.map.get_mut(name) {
+            // The NAS sends the history again on the new subscription.
+            topic.history.clear();
             let _ = topic.tx.send(Event::Resumed);
+        }
+    }
+
+    /// `count` notifications were lost before reaching any topic: every handle gets
+    /// [`Event::Missed`] and queries its state again. Kept histories now have a gap.
+    pub(super) fn missed_all(&mut self, count: u64) {
+        for topic in self.map.values_mut() {
+            topic.history.clear();
+            let _ = topic.tx.send(Event::Missed(count));
         }
     }
 
@@ -328,7 +385,7 @@ mod tests {
     #[test]
     fn the_last_release_returns_the_upstream_id() {
         let (mut t, mut rel) = topics();
-        let a = t.insert("alert.list", Some("sub-1".into()), None);
+        let a = t.insert("alert.list", Some("sub-1".into()), TopicOptions::default());
         let b = t.join("alert.list").unwrap();
         drop(a);
         assert_eq!(t.release(rel.try_recv().unwrap()), None);
@@ -340,9 +397,9 @@ mod tests {
     #[test]
     fn a_handle_of_an_ended_topic_does_not_release_its_successor() {
         let (mut t, mut rel) = topics();
-        let old = t.insert("alert.list", Some("sub-1".into()), None);
+        let old = t.insert("alert.list", Some("sub-1".into()), TopicOptions::default());
         t.end("alert.list", Error::Closed);
-        let new = t.insert("alert.list", Some("sub-2".into()), None);
+        let new = t.insert("alert.list", Some("sub-2".into()), TopicOptions::default());
         drop(old);
         assert_eq!(t.release(rel.try_recv().unwrap()), None);
         drop(new);
@@ -352,7 +409,7 @@ mod tests {
     #[test]
     fn dispatch_routes_by_collection() {
         let (mut t, _rel) = topics();
-        let mut sub = t.insert("alert.list", Some("sub-1".into()), None);
+        let mut sub = t.insert("alert.list", Some("sub-1".into()), TopicOptions::default());
         let other = note("collection_update", json!({"collection": "disk.query"}));
         assert!(t.dispatch(other).is_some());
         let mine = note(
@@ -377,7 +434,14 @@ mod tests {
                 json!({"msg": "added", "collection": "log:x", "fields": {"n": n}}),
             )
         };
-        let mut big = t.insert("log:x", Some("sub-1".into()), Some(8));
+        let mut big = t.insert(
+            "log:x",
+            Some("sub-1".into()),
+            TopicOptions {
+                buffer: Some(8),
+                replay: 0,
+            },
+        );
         assert!(big.try_recv().is_none());
         for n in 0..8 {
             assert!(t.dispatch(line(n)).is_none());
@@ -390,12 +454,65 @@ mod tests {
         }
         assert!(big.try_recv().is_none());
 
-        let mut small = t.insert("log:y", Some("sub-2".into()), None);
+        let mut small = t.insert("log:y", Some("sub-2".into()), TopicOptions::default());
         for n in 0..6 {
             let mut l = line(n);
             l.params["collection"] = json!("log:y");
             t.dispatch(l);
         }
         assert!(matches!(small.try_recv(), Some(Event::Missed(2))));
+    }
+
+    fn line(name: &str, n: u64) -> Notification {
+        note(
+            "collection_update",
+            json!({"msg": "added", "collection": name, "fields": {"n": n}}),
+        )
+    }
+
+    fn next_n(sub: &mut Subscription) -> Option<Value> {
+        match sub.try_recv() {
+            Some(Event::Update(u)) => Some(u.fields["n"].clone()),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn a_handle_that_joins_later_gets_the_last_updates_first() {
+        let (mut t, _rel) = topics();
+        let opts = TopicOptions {
+            buffer: Some(8),
+            replay: 3,
+        };
+        let mut first = t.insert("log:x", Some("sub-1".into()), opts);
+        for n in 0..5 {
+            t.dispatch(line("log:x", n));
+        }
+        let mut second = t.join("log:x").unwrap();
+        t.dispatch(line("log:x", 5));
+        let got: Vec<_> = std::iter::from_fn(|| next_n(&mut second)).collect();
+        assert_eq!(got, [json!(2), json!(3), json!(4), json!(5)]);
+        assert_eq!(std::iter::from_fn(|| next_n(&mut first)).count(), 6);
+
+        // The NAS resends the history on a new subscription: the old one is not replayed.
+        t.resuming("log:x");
+        t.subscribed("log:x", "sub-2".into());
+        let mut third = t.join("log:x").unwrap();
+        assert!(third.try_recv().is_none());
+
+        // A topic without replay keeps nothing.
+        let _plain = t.insert("alert.list", Some("sub-3".into()), TopicOptions::default());
+        t.dispatch(line("alert.list", 1));
+        assert!(t.join("alert.list").unwrap().try_recv().is_none());
+    }
+
+    #[test]
+    fn missed_all_reaches_every_topic() {
+        let (mut t, _rel) = topics();
+        let mut a = t.insert("alert.list", Some("sub-1".into()), TopicOptions::default());
+        let mut b = t.insert("pool.query", Some("sub-2".into()), TopicOptions::default());
+        t.missed_all(3);
+        assert!(matches!(a.try_recv(), Some(Event::Missed(3))));
+        assert!(matches!(b.try_recv(), Some(Event::Missed(3))));
     }
 }

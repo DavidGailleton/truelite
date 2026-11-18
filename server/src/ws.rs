@@ -6,7 +6,6 @@
 //! tasks and hand their messages back over a bounded channel, so a slow browser slows them down
 //! instead of growing memory; a subscriber that falls too far behind gets `missed`.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -20,7 +19,7 @@ use tokio::sync::mpsc;
 use tokio::task::{AbortHandle, JoinSet};
 use tracing::Instrument;
 
-use crate::allowlist::Allowlist;
+use crate::allowlist::{Allowlist, Stream};
 use crate::origin::SameOrigin;
 use crate::sessions::{Authed, NotLoggedIn, SessionStore, WsGuard};
 use crate::truenas::{self, Event, Link, Update, UpdateKind};
@@ -29,6 +28,9 @@ use crate::truenas::{self, Event, Link, Update, UpdateKind};
 const MAX_MESSAGE: usize = 64 * 1024;
 /// Calls in flight per socket; more are refused with `busy`.
 const MAX_CALLS: usize = 16;
+/// Actions (jobs) in flight per socket, apart from calls: a job can take minutes and must not
+/// keep reads from going out. More are refused with `busy`.
+const MAX_JOBS: usize = 32;
 /// Topics per socket; more are refused with `busy`.
 const MAX_TOPICS: usize = 16;
 /// Messages queued for the browser before calls and subscriptions wait.
@@ -66,6 +68,7 @@ pub async fn upgrade(
                 allow,
                 out_tx,
                 calls: JoinSet::new(),
+                jobs: JoinSet::new(),
                 subs: JoinSet::new(),
                 topics: HashMap::new(),
                 _guard: guard,
@@ -283,6 +286,8 @@ struct Bridge {
     allow: Allowlist,
     out_tx: mpsc::Sender<String>,
     calls: JoinSet<()>,
+    /// Actions, counted apart from `calls` ([`MAX_JOBS`]).
+    jobs: JoinSet<()>,
     /// Aborted, and so unsubscribed, when the socket closes.
     subs: JoinSet<()>,
     topics: HashMap<String, AbortHandle>,
@@ -413,16 +418,24 @@ impl Bridge {
                 ));
             }
         };
-        while self.calls.try_join_next().is_some() {}
-        if self.calls.len() >= MAX_CALLS {
-            return Some(reply_err(Some(id), WireError::busy()));
-        }
         let session = self.session.clone();
         let out = self.out_tx.clone();
         if job.is_some() {
-            self.calls
+            while self.jobs.try_join_next().is_some() {}
+            if self.jobs.len() >= MAX_JOBS {
+                let error = WireError::new(
+                    "busy",
+                    "too many actions running on this page; wait for one to finish",
+                );
+                return Some(reply_err(Some(id), error));
+            }
+            self.jobs
                 .spawn(run_job(session, id, method, params, out).in_current_span());
             return None;
+        }
+        while self.calls.try_join_next().is_some() {}
+        if self.calls.len() >= MAX_CALLS {
+            return Some(reply_err(Some(id), WireError::busy()));
         }
         self.calls.spawn(
             async move {
@@ -452,7 +465,7 @@ impl Bridge {
     }
 
     fn sub(&mut self, topic: String) -> Option<String> {
-        let Some(upstream) = self.allow.event(&topic).map(Cow::into_owned) else {
+        let Some(route) = self.allow.event(&topic) else {
             tracing::warn!(%topic, "refused: event not allowed");
             let error = WireError::new("not_allowed", "truelite does not allow this event");
             return Some(status(&topic, Status::Ended { error }));
@@ -471,7 +484,8 @@ impl Bridge {
             forward(
                 self.session.clone(),
                 topic.clone(),
-                upstream,
+                route.upstream.into_owned(),
+                route.stream,
                 self.out_tx.clone(),
             )
             .in_current_span(),
@@ -518,14 +532,17 @@ async fn forward(
     session: truenas::Session,
     topic: String,
     upstream: String,
+    stream: Stream,
     out: mpsc::Sender<String>,
 ) {
-    let event = upstream
-        .split_once(':')
-        .map_or(upstream.as_str(), |(name, _)| name);
-    let logs = event == truenas::apps::LOG_EVENT;
-    let buffer = logs.then_some(LOG_BUFFER);
-    let mut sub = match session.subscribe_with_buffer(&upstream, buffer).await {
+    let opts = match stream {
+        Stream::Collection => truenas::TopicOptions::default(),
+        Stream::Log => truenas::TopicOptions {
+            buffer: Some(LOG_BUFFER),
+            replay: truenas::apps::LOG_TAIL_MAX as usize,
+        },
+    };
+    let mut sub = match session.subscribe_with(&upstream, opts).await {
         Ok(sub) => sub,
         Err(e) => {
             tracing::debug!(%topic, error = %e, "subscribe failed");
@@ -537,10 +554,11 @@ async fn forward(
     if out.send(status(&topic, Status::Subscribed)).await.is_err() {
         return;
     }
-    if logs {
+    if stream == Stream::Log {
         return forward_logs(&topic, sub, &out).await;
     }
-    let reshape = reshaper(event);
+    // A collection event has no arguments: its upstream name is the event's.
+    let reshape = reshaper(&upstream);
     let mut warned = false;
     while let Some(event) = sub.recv().await {
         let msg = match event {
@@ -985,8 +1003,43 @@ mod tests {
         h.until_nas_saw("core.unsubscribe").await;
     }
 
-    /// #32: a log topic goes upstream under the name truelite rebuilds, comes back under the
-    /// browser's own string, in batches of trimmed lines, in order; the end of the stream ends it.
+    /// Actions that take minutes have their own limit: a page full of them still reads, and
+    /// one too many is refused alone.
+    #[tokio::test]
+    async fn long_actions_do_not_keep_reads_from_going_out() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        for id in 0..MAX_JOBS {
+            let id = u32::try_from(id).unwrap();
+            send(
+                &mut ws,
+                json!({"op": "call", "id": id, "method": "app.upgrade", "params": ["hang"]}),
+            )
+            .await;
+        }
+        send(
+            &mut ws,
+            json!({"op": "call", "id": 100, "method": "app.stop", "params": ["hang"]}),
+        )
+        .await;
+        let refused = next(&mut ws).await;
+        assert_eq!(
+            (refused["id"].clone(), refused["error"]["code"].clone()),
+            (json!(100), json!("busy"))
+        );
+        send(
+            &mut ws,
+            json!({"op": "call", "id": 101, "method": "system.info"}),
+        )
+        .await;
+        assert_eq!(
+            next(&mut ws).await,
+            json!({"id": 101, "result": {"hostname": "truenas"}})
+        );
+    }
+
+    /// #33: an action's job progress comes back under the call's id, only for its own job,
+    /// then its reply.
     #[tokio::test]
     async fn an_action_sends_its_job_progress_then_its_reply() {
         let h = Harness::new().await;
@@ -1075,6 +1128,8 @@ mod tests {
         );
     }
 
+    /// #32: a log topic goes upstream under the name truelite rebuilds, comes back under the
+    /// browser's own string, in batches of trimmed lines, in order; the end of the stream ends it.
     #[tokio::test]
     async fn container_logs_arrive_in_batches_under_the_browsers_topic() {
         let h = Harness::new().await;

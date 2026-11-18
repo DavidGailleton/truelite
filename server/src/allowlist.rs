@@ -39,17 +39,41 @@ const EVENTS: &[&str] = &[
     "app.query",
 ];
 
-/// Events with arguments (`name:{json}`), each with the check that rebuilds the upstream name
-/// from the browser's argument string. The browser's string is never forwarded as it is.
+/// How the bridge forwards an event to the browser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stream {
+    /// One `data` message per change, reshaped per event (`ws::reshaper`).
+    Collection,
+    /// Container log lines, batched; the tail is replayed to a later subscriber.
+    Log,
+}
+
+/// An allowed event: the name to subscribe to on the NAS, and how to forward it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Route<'a> {
+    pub upstream: Cow<'a, str>,
+    pub stream: Stream,
+}
+
+/// Checks the browser's argument string of an event and rebuilds it; `None` refuses it.
 type ParamCheck = fn(&str) -> Option<String>;
 
-const PARAM_EVENTS: &[(&str, ParamCheck)] = &[
+/// An event with arguments (`name:{json}`). The browser's string is never forwarded as it is.
+#[derive(Debug)]
+struct ParamEvent {
+    name: &'static str,
+    check: ParamCheck,
+    stream: Stream,
+}
+
+const PARAM_EVENTS: &[ParamEvent] = &[
     // App logs page: one container's log (APPS_READ). Arguments checked and rebuilt by
     // `truenas::apps::log_topic`; lines trimmed by `truenas::apps::compact_log_line`.
-    (
-        crate::truenas::apps::LOG_EVENT,
-        crate::truenas::apps::log_topic,
-    ),
+    ParamEvent {
+        name: crate::truenas::apps::LOG_EVENT,
+        check: crate::truenas::apps::log_topic,
+        stream: Stream::Log,
+    },
 ];
 
 /// Checks the browser's params of an action and rebuilds them; `None` refuses them.
@@ -77,7 +101,7 @@ const JOB_METHODS: &[(&str, JobCheck)] = &[
 pub struct Allowlist {
     methods: &'static [&'static str],
     events: &'static [&'static str],
-    param_events: &'static [(&'static str, ParamCheck)],
+    param_events: &'static [ParamEvent],
     jobs: &'static [(&'static str, JobCheck)],
 }
 
@@ -106,15 +130,21 @@ impl Allowlist {
             .map(|(_, check)| *check)
     }
 
-    /// The name to subscribe to on the NAS when the browser may follow `topic`: the topic
-    /// itself for a listed event, or the rebuilt `name:{json}` of an event with arguments.
-    pub fn event<'a>(&self, topic: &'a str) -> Option<Cow<'a, str>> {
+    /// Where and how to follow `topic` when the browser may: the topic itself for a listed
+    /// event, or the rebuilt `name:{json}` of an event with arguments.
+    pub fn event<'a>(&self, topic: &'a str) -> Option<Route<'a>> {
         if self.events.contains(&topic) {
-            return Some(Cow::Borrowed(topic));
+            return Some(Route {
+                upstream: Cow::Borrowed(topic),
+                stream: Stream::Collection,
+            });
         }
         let (name, arg) = topic.split_once(':')?;
-        let (_, check) = self.param_events.iter().find(|(n, _)| *n == name)?;
-        check(arg).map(Cow::Owned)
+        let event = self.param_events.iter().find(|e| e.name == name)?;
+        Some(Route {
+            upstream: Cow::Owned((event.check)(arg)?),
+            stream: event.stream,
+        })
     }
 }
 
@@ -168,13 +198,17 @@ mod tests {
         let topic = format!(
             r#"app.container_log_follow:{{ "tail_lines":50, "container_id":"{id}", "app_name":"plex" }}"#
         );
+        let route = a.event(&topic).unwrap();
+        assert_eq!(route.stream, Stream::Log);
         assert_eq!(
-            a.event(&topic).unwrap(),
+            route.upstream,
             format!(
                 r#"app.container_log_follow:{{"app_name":"plex","container_id":"{id}","tail_lines":50}}"#
             )
         );
-        assert!(matches!(a.event("alert.list").unwrap(), Cow::Borrowed(_)));
+        let plain = a.event("alert.list").unwrap();
+        assert!(matches!(plain.upstream, Cow::Borrowed(_)));
+        assert_eq!(plain.stream, Stream::Collection);
         for refused in [
             "app.container_log_follow".to_owned(),
             "app.container_log_follow:".to_owned(),
@@ -214,7 +248,7 @@ mod tests {
         ];
         // Reads whose name looks like an action: checked one by one in the TrueNAS docs.
         const READS: &[&str] = &["app.upgrade_summary"];
-        let params = PARAM_EVENTS.iter().map(|(n, _)| n);
+        let params = PARAM_EVENTS.iter().map(|e| &e.name);
         for name in METHODS.iter().chain(EVENTS).chain(params) {
             if READS.contains(name) {
                 continue;
