@@ -5,11 +5,19 @@
 	import { NAV_ITEMS, isActive } from '#lib/nav.js';
 	import { nas } from '#lib/nas.svelte.js';
 	import { logout, session } from '#lib/session.svelte.js';
+	import type { Theme } from '#lib/theme.js';
+	import { setTheme, theme } from '#lib/theme.svelte.js';
 	import ConnectionBanner from './ConnectionBanner.svelte';
 	import Icon from './Icon.svelte';
 	import Logo from './Logo.svelte';
 
 	let { children }: { children: Snippet } = $props();
+
+	const THEME_OPTIONS: { value: Theme; label: string; icon: 'monitor' | 'sun' | 'moon' }[] = [
+		{ value: 'system', label: 'System', icon: 'monitor' },
+		{ value: 'light', label: 'Light', icon: 'sun' },
+		{ value: 'dark', label: 'Dark', icon: 'moon' }
+	];
 
 	let accountOpen = $state(false);
 	let account = $state<HTMLDetailsElement>();
@@ -87,6 +95,25 @@
 							Not logged in
 						{/if}
 					</p>
+					<fieldset class="theme">
+						<legend>Theme</legend>
+						<div class="segments">
+							{#each THEME_OPTIONS as option (option.value)}
+								<label class="segment">
+									<input
+										class="visually-hidden"
+										type="radio"
+										name="theme"
+										value={option.value}
+										checked={theme.value === option.value}
+										onchange={() => setTheme(option.value)}
+									/>
+									<Icon name={option.icon} size={16} />
+									{option.label}
+								</label>
+							{/each}
+						</div>
+					</fieldset>
 					<button class="menu-item" type="button" onclick={onLogout} disabled={loggingOut}>
 						<Icon name="log-out" size={16} />
 						{loggingOut ? 'Logging out…' : 'Log out'}
@@ -226,6 +253,57 @@
 		font-size: var(--text-sm);
 		font-weight: var(--weight-medium);
 	}
+	/* Theme: a segmented control of native radios (arrow keys, screen readers). */
+	.theme {
+		margin: 0 0 var(--space-2);
+		padding: 0 0 var(--space-2);
+		border: 0;
+		border-bottom: 1px solid var(--border-subdued);
+	}
+	.theme legend {
+		padding: var(--space-1) var(--space-3);
+		color: var(--text-secondary);
+		font-size: var(--text-xs);
+	}
+	.segments {
+		display: flex;
+		gap: 0.125rem;
+		margin: 0 var(--space-1);
+		padding: 0.125rem;
+		border-radius: var(--radius-lg);
+		background: var(--container-inset);
+	}
+	.segment {
+		position: relative;
+		display: flex;
+		flex: 1;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-1);
+		min-width: 0;
+		min-height: 2.25rem;
+		padding: 0 var(--space-2);
+		border-radius: var(--radius-md);
+		color: var(--text-secondary);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-medium);
+		cursor: pointer;
+		user-select: none;
+		transition:
+			background-color var(--duration-fast),
+			color var(--duration-fast);
+	}
+	.segment:hover {
+		color: var(--text-primary);
+	}
+	.segment:has(input:checked) {
+		background: var(--container);
+		box-shadow: var(--shadow-border-xs);
+		color: var(--text-primary);
+	}
+	.segment:has(input:focus-visible) {
+		outline: 2px solid var(--focus-ring);
+	}
 	.menu-item {
 		display: flex;
 		align-items: center;
@@ -250,7 +328,8 @@
 		cursor: progress;
 	}
 	@media (pointer: coarse) {
-		.menu-item {
+		.menu-item,
+		.segment {
 			min-height: var(--touch);
 		}
 	}

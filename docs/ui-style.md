@@ -80,7 +80,10 @@ fuchsia, pink).
 
 Page `#0B0B0B`, cards gray-900 `#171717`, raised controls gray-700. Shadows become a faint white
 glow (8 % white) and rings switch to white alpha. The primary button inverts to **white with black
-text**. Toggle with `[data-theme]` on `<html>`, default from `prefers-color-scheme`.
+text**. Toggle with `[data-theme]` on `<html>`, default from `prefers-color-scheme`. In truelite
+the account menu offers System / Light / Dark, stored per browser in `localStorage`
+(`truelite-theme`, absent = System) and applied by an inline script in `app.html` before first
+paint, so a reload never flashes the wrong theme.
 
 ## 3. Typography
 
