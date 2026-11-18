@@ -145,13 +145,11 @@
 					<span>Code</span>
 					<input
 						bind:this={codeInput}
-						bind:value={code}
+						bind:value={() => code, (v) => (code = v.replace(/\s+/g, ''))}
 						name="code"
 						inputmode="numeric"
 						autocomplete="one-time-code"
 						pattern={'[0-9]{6,8}'}
-						minlength="6"
-						maxlength="8"
 						required
 						aria-invalid={error ? 'true' : undefined}
 						aria-describedby={error ? 'login-error' : undefined}

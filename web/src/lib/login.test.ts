@@ -78,9 +78,42 @@ describe('loginWithCode', () => {
 		expect(r).toEqual({ kind: 'otp', error: 'Wrong code. Try again.' });
 	});
 
-	it('starts again when the code step is over', async () => {
-		const r = await loginWithCode('000000', reply(401, { error: 'log in again' }));
-		expect(r).toEqual({ kind: 'restart', error: 'The code expired. Log in again.' });
+	it('removes every space from the code', async () => {
+		const fetchFn = reply(200, USER);
+		await loginWithCode(' 123 456 ', fetchFn);
+		const [, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+		expect(JSON.parse(init.body as string)).toEqual({ code: '123456' });
+	});
+
+	it.each([
+		['expired', 'The code expired. Log in again.'],
+		['too_many_codes', 'Too many wrong codes. Log in again.'],
+		[undefined, 'Log in again.']
+	])('starts again with the reason (%s)', async (reason, error) => {
+		const r = await loginWithCode('000000', reply(401, { error: 'log in again', reason }));
+		expect(r).toEqual({ kind: 'restart', error });
+	});
+
+	it.each([
+		[504, 'the NAS did not answer in time', 'The NAS did not answer in time. Log in again.'],
+		[502, 'cannot reach the NAS', 'Cannot reach the NAS. Log in again.'],
+		[
+			403,
+			'this account is not allowed to use a web interface',
+			'This account is not allowed to use a web interface. Log in again.'
+		]
+	])('starts again after a %i, which ended the login', async (status, message, error) => {
+		const r = await loginWithCode('123456', reply(status, { error: message }));
+		expect(r).toEqual({ kind: 'restart', error });
+	});
+
+	it('stays on the code step when the login is still waiting', async () => {
+		expect(await loginWithCode('12', reply(400, { error: 'invalid request' }))).toEqual({
+			kind: 'error',
+			error: 'Invalid request.'
+		});
+		const limited = await loginWithCode('123456', reply(429, { error: 'too many attempts' }));
+		expect(limited.kind).toBe('error');
 	});
 });
 
