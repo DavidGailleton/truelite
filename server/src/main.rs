@@ -8,6 +8,8 @@ mod rate_limit;
 mod security;
 mod sessions;
 mod static_files;
+#[cfg(test)]
+mod test_client;
 mod truenas;
 mod ws;
 

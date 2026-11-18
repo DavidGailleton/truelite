@@ -417,14 +417,14 @@ async fn admit(session: truenas::Session, sessions: &SessionStore) -> Result<Res
 mod tests {
     use super::*;
     use axum::Router;
-    use axum::body::{Body, to_bytes};
+    use axum::body::Body;
     use axum::http::Request;
     use serde_json::Value;
-    use tower::ServiceExt;
 
     use crate::AppState;
     use crate::sessions::{COOKIE, StoreOptions};
-    use crate::truenas::mock::{Mock, fake_nas, within};
+    use crate::test_client::{HttpReply as Reply, http as send};
+    use crate::truenas::mock::{Mock, fake_nas};
 
     const CLIENT: &str = "192.0.2.1:50000";
 
@@ -486,54 +486,6 @@ mod tests {
                 CLIENT,
             )
             .await
-        }
-    }
-
-    struct Reply {
-        status: StatusCode,
-        headers: HeaderMap,
-        body: Value,
-    }
-
-    impl Reply {
-        /// The value of the `Set-Cookie` for `name` (empty when it deletes the cookie).
-        fn cookie(&self, name: &str) -> Option<String> {
-            self.headers
-                .get_all(header::SET_COOKIE)
-                .iter()
-                .map(|v| v.to_str().unwrap())
-                .find_map(|v| {
-                    let (pair, _) = v.split_once(';')?;
-                    let (k, val) = pair.split_once('=')?;
-                    (k == name).then(|| val.to_owned())
-                })
-        }
-    }
-
-    /// Host the test requests are sent to, and the browser origin of the app.
-    const HOST: &str = "truelite.test";
-
-    /// Sends `req` from `from`, as the app's own page unless it sets `Origin` itself.
-    async fn send(router: Router, mut req: Request<Body>, from: &str) -> Reply {
-        let h = req.headers_mut();
-        h.insert(header::HOST, HeaderValue::from_static(HOST));
-        if !h.contains_key(header::ORIGIN) {
-            h.insert(
-                header::ORIGIN,
-                HeaderValue::from_static("http://truelite.test"),
-            );
-        }
-        let addr: SocketAddr = from.parse().unwrap();
-        req.extensions_mut().insert(ConnectInfo(addr));
-        let res = within(router.oneshot(req)).await.unwrap();
-        let status = res.status();
-        let headers = res.headers().clone();
-        let bytes = to_bytes(res.into_body(), 64 * 1024).await.unwrap();
-        let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-        Reply {
-            status,
-            headers,
-            body,
         }
     }
 

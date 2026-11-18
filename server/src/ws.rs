@@ -453,10 +453,9 @@ mod tests {
     use axum::http::{Request as HttpRequest, StatusCode, header};
     use futures_util::{SinkExt, StreamExt};
     use serde_json::json;
-    use tokio::net::{TcpListener, TcpStream};
+    use tokio::net::TcpListener;
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use tokio_tungstenite::tungstenite::{self, Message as WsMessage};
-    use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
     use tower::ServiceExt;
 
     use super::*;
@@ -464,10 +463,9 @@ mod tests {
     use crate::login::Login;
     use crate::rate_limit::LimitOptions;
     use crate::sessions::{COOKIE, StoreOptions};
+    use crate::test_client::{Client, call, close_code, event, next, send};
     use crate::truenas::SessionOptions;
     use crate::truenas::mock::{Mock, logged_in, within};
-
-    type Client = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
     const MIN: Duration = Duration::from_secs(60);
 
@@ -556,31 +554,6 @@ mod tests {
             })
             .await;
         }
-    }
-
-    async fn send(ws: &mut Client, msg: Value) {
-        ws.send(WsMessage::text(msg.to_string())).await.unwrap();
-    }
-
-    /// The next JSON message, skipping pings.
-    async fn next(ws: &mut Client) -> Value {
-        loop {
-            match within(ws.next()).await.expect("socket ended").unwrap() {
-                WsMessage::Text(t) => return serde_json::from_str(t.as_str()).unwrap(),
-                WsMessage::Ping(_) | WsMessage::Pong(_) => {}
-                other => panic!("expected JSON, got {other:?}"),
-            }
-        }
-    }
-
-    async fn call(ws: &mut Client, id: u32, method: &str) -> Value {
-        send(ws, json!({"op": "call", "id": id, "method": method})).await;
-        next(ws).await
-    }
-
-    fn event(collection: &str, n: i64) -> Value {
-        json!({"jsonrpc": "2.0", "method": "collection_update", "params": {
-            "msg": "added", "collection": collection, "id": n, "fields": {"n": n}}})
     }
 
     fn http_status(res: Result<Client, tungstenite::Error>) -> u16 {
@@ -845,18 +818,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::NO_CONTENT);
-        let frame = within(async {
-            loop {
-                match ws.next().await {
-                    Some(Ok(WsMessage::Close(frame))) => return frame,
-                    Some(Ok(_)) => {}
-                    other => panic!("expected a close frame, got {other:?}"),
-                }
-            }
-        })
-        .await
-        .expect("close frame has a code");
-        assert_eq!(u16::from(frame.code), CLOSE_LOGGED_OUT);
+        assert_eq!(close_code(&mut ws).await, CLOSE_LOGGED_OUT);
     }
 
     #[tokio::test]
