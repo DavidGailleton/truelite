@@ -44,6 +44,8 @@
 		gap: var(--space-2);
 		margin: var(--space-2) var(--space-4) 0;
 		margin-top: max(var(--space-2), env(safe-area-inset-top));
+		/* Clear of the theme button fixed in the top-right corner. */
+		margin-right: max(var(--space-4), var(--corner-clear));
 		padding: var(--space-3) var(--space-4);
 		border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
 		border-radius: var(--radius-lg);

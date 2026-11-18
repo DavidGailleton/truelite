@@ -127,6 +127,9 @@
 	--tabbar-height: 3.5rem;
 	--gutter: var(--space-3);
 	--content-max: 80rem;
+	/* The theme button fixed in the top-right corner, and the room the top row leaves for it. */
+	--corner-size: var(--touch);
+	--corner-clear: calc(var(--corner-size) + var(--space-3) + var(--space-2));
 
 	/* Motion. */
 	--duration-fast: 150ms;

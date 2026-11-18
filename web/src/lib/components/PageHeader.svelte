@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import ThemeToggle from './ThemeToggle.svelte';
 
 	let {
 		title,
@@ -30,7 +29,6 @@
 		{/if}
 	</div>
 	{#if actions}<div class="actions">{@render actions()}</div>{/if}
-	<div class="toggle"><ThemeToggle /></div>
 </header>
 
 <style>
@@ -41,15 +39,12 @@
 		justify-content: space-between;
 		gap: var(--space-4);
 		margin-bottom: var(--space-6);
+		/* Keeps the title clear of the theme button fixed in the corner. */
+		padding-right: var(--corner-clear);
 	}
-	/* The title takes the free width and wraps, so the theme button stays top right at 360 px. */
 	.text {
 		flex: 1 1 0;
 		min-width: 0;
-	}
-	.toggle {
-		align-self: flex-start;
-		margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2)) 0 0;
 	}
 	h1 {
 		font-size: var(--text-xl);

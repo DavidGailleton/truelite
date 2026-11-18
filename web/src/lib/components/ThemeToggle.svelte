@@ -1,5 +1,6 @@
 <script lang="ts">
-	// One-click light/dark switch. "System" stays in the Account menu.
+	// One-click light/dark switch, fixed in the top-right corner of every page (rendered once by
+	// AppShell and by /login). "System" stays in the Account menu.
 	import { MediaQuery } from 'svelte/reactivity';
 	import { resolveTheme, toggledTheme } from '#lib/theme.js';
 	import { setTheme, theme } from '#lib/theme.svelte.js';
@@ -23,15 +24,19 @@
 
 <style>
 	.theme-toggle {
+		position: fixed;
+		top: max(var(--space-3), env(safe-area-inset-top));
+		right: max(var(--space-3), env(safe-area-inset-right));
+		z-index: 25; /* over the page and the reconnect banner (z 10); the nav (z 20) never reaches this corner */
 		display: grid;
-		flex: none;
 		place-items: center;
-		width: 2.5rem;
-		height: 2.5rem;
+		width: var(--corner-size);
+		height: var(--corner-size);
 		padding: 0;
 		border: 0;
 		border-radius: var(--radius-lg);
-		background: transparent;
+		background: var(--container);
+		box-shadow: var(--shadow-sm);
 		color: var(--text-secondary);
 		cursor: pointer;
 		transition:
@@ -39,13 +44,7 @@
 			color var(--duration-fast);
 	}
 	.theme-toggle:hover {
-		background: var(--container-inset-hover);
+		background: var(--container-hover);
 		color: var(--text-primary);
-	}
-	@media (pointer: coarse) {
-		.theme-toggle {
-			width: var(--touch);
-			height: var(--touch);
-		}
 	}
 </style>

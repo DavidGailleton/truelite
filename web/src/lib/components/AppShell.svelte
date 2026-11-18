@@ -10,6 +10,7 @@
 	import ConnectionBanner from './ConnectionBanner.svelte';
 	import Icon from './Icon.svelte';
 	import Logo from './Logo.svelte';
+	import ThemeToggle from './ThemeToggle.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
@@ -123,6 +124,8 @@
 		</li>
 	</ul>
 </nav>
+
+<ThemeToggle />
 
 <div class="content">
 	<ConnectionBanner />
