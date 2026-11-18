@@ -12,15 +12,19 @@
 use std::time::Duration;
 
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use super::error::Error;
-use super::events::{Event, Subscription, Update};
+use super::events::{Event, Subscription, TopicOptions, Update, UpdateKind};
 use super::session::Session;
 
 /// The job event.
 pub const EVENT: &str = "core.get_jobs";
+
+/// Job events kept for a slow follower. Every job on the NAS reports here, image pulls many times
+/// a second; a call's first event must not be lost before its job is known.
+const EVENT_BUFFER: usize = 256;
 
 /// Progress goes out at most this often; image pulls report many steps a second.
 const PROGRESS_EVERY: Duration = Duration::from_millis(250);
@@ -105,6 +109,32 @@ impl Tracker {
         self.last = Some(progress.clone());
         Some(progress)
     }
+
+    /// Looks for this call's job in a `core.get_jobs` query result, after its first event may
+    /// have been lost. The new progress if it was found and has some.
+    fn find_in(&mut self, jobs: &Value) -> Option<JobProgress> {
+        jobs.as_array()?.iter().find_map(|job| {
+            self.update(&Update {
+                kind: UpdateKind::Changed,
+                id: None,
+                fields: job.clone(),
+            })
+        })
+    }
+}
+
+/// The jobs still going on, with only what [`Tracker`] reads. `core.get_jobs` needs no role and
+/// lists the user's own jobs.
+async fn running_jobs(session: &Session) -> Result<Value, Error> {
+    session
+        .call(
+            EVENT,
+            json!([
+                [["state", "in", ["WAITING", "RUNNING"]]],
+                {"select": ["id", "message_ids", "progress"]}
+            ]),
+        )
+        .await
 }
 
 /// The next job event, or never when there is no subscription.
@@ -132,7 +162,11 @@ pub async fn run(
     mut on_progress: impl FnMut(JobProgress),
 ) -> Result<Value, Error> {
     // Subscribed before the call, so its first event cannot be missed.
-    let mut sub = match session.subscribe(EVENT).await {
+    let opts = TopicOptions {
+        buffer: Some(EVENT_BUFFER),
+        replay: 0,
+    };
+    let mut sub = match session.subscribe_with(EVENT, opts).await {
         Ok(sub) => Some(sub),
         Err(Error::LoggedOut) => return Err(Error::LoggedOut),
         Err(e) => {
@@ -154,8 +188,21 @@ pub async fn run(
                         pending = Some(p);
                     }
                 }
-                // Events of a gap are lost: the next one about the job brings it up to date.
-                Some(Event::Resumed | Event::Missed(_)) => {}
+                // Events of a gap are lost: once the job is known, the next event about it
+                // brings it up to date. Before that, only its first event names this call, so
+                // look for the job instead.
+                Some(Event::Resumed | Event::Missed(_)) => {
+                    if tracker.job_id.is_none() {
+                        match running_jobs(session).await {
+                            Ok(jobs) => {
+                                if let Some(p) = tracker.find_in(&jobs) {
+                                    pending = Some(p);
+                                }
+                            }
+                            Err(e) => tracing::debug!(error = %e, "cannot look for the job"),
+                        }
+                    }
+                }
                 Some(Event::Ended(_)) | None => sub = None,
             },
             () = tokio::time::sleep_until(next_send), if pending.is_some() => {
@@ -218,6 +265,25 @@ mod tests {
             "description": "Waiting"}});
         assert_eq!(t.update(&update(joined)), progress(Some(0), "Waiting"));
         assert_eq!(t.job_id, Some(40));
+    }
+
+    #[test]
+    fn a_job_whose_first_event_was_lost_is_found_by_query() {
+        let mut t = Tracker::new(7);
+        let jobs = json!([
+            {"id": 50, "message_ids": [3], "progress": {"percent": 80}},
+            {"id": 53, "message_ids": [7], "progress": {"percent": 40, "description": "Pulling"}}
+        ]);
+        assert_eq!(t.find_in(&jobs), progress(Some(40), "Pulling"));
+        assert_eq!(t.job_id, Some(53));
+        // Then followed by id, as usual.
+        let later = json!({"id": 53, "progress": {"percent": 50, "description": "Pulling"}});
+        assert_eq!(t.update(&update(later)), progress(Some(50), "Pulling"));
+
+        let mut none = Tracker::new(9);
+        assert_eq!(none.find_in(&jobs), None);
+        assert_eq!(none.find_in(&json!({"error": 1})), None);
+        assert_eq!(none.job_id, None);
     }
 
     #[test]
