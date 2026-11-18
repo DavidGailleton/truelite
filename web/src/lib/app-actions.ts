@@ -94,6 +94,10 @@ export interface ActionRun {
 	done: boolean;
 	/** Set when the action failed. */
 	error: string | null;
+	/** The app's state when the action was confirmed. */
+	from: AppState;
+	/** The app has been seen in another state since (`noteState` in app-actions.svelte.ts). */
+	left: boolean;
 }
 
 export interface Busy {
@@ -109,7 +113,10 @@ export interface Busy {
 export function busyLine(run: ActionRun | undefined, state: AppState): Busy | null {
 	if (run && run.error === null) {
 		if (!run.done) return { label: ACTION_RUNNING[run.action], progress: run.progress };
-		const settled = state !== 'deploying' && state !== 'stopping';
+		// A crashed app that is started or updated is crashed until the NAS reports it deploying:
+		// still crashed is not the end of the action until it has left that state.
+		const unmoved = state === 'crashed' && run.from === 'crashed' && !run.left;
+		const settled = state !== 'deploying' && state !== 'stopping' && !unmoved;
 		if (!settled || !ACTION_DONE[run.action].includes(state)) {
 			return { label: ACTION_SETTLING[run.action], progress: null };
 		}

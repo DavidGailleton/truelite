@@ -12,9 +12,15 @@
 		busyLine,
 		type AppAction
 	} from '#lib/app-actions.js';
-	import { actionRun, dismissAction, finishAction, runAction } from '#lib/app-actions.svelte.js';
+	import {
+		actionRun,
+		dismissAction,
+		finishAction,
+		noteState,
+		runAction
+	} from '#lib/app-actions.svelte.js';
 	import { parseUpgradeSummary, UPGRADE_SUMMARY, type UpgradeSummary } from '#lib/app-upgrade.js';
-	import type { App } from '#lib/apps.js';
+	import type { App, AppUpdate } from '#lib/apps.js';
 	import { nas } from '#lib/nas.svelte.js';
 	import { NasError } from '#lib/ws.js';
 	import ConfirmDialog from './ConfirmDialog.svelte';
@@ -47,12 +53,23 @@
 	$effect(() => {
 		if (run?.done && busy === null) finishAction(app.id);
 	});
+	// A run started on a crashed app ends only once the app has moved (busyLine).
+	$effect(() => {
+		if (run) noteState(app.id, app.state);
+	});
 	// None while the app is changing.
 	const actions = $derived(canAct ? appActions(app.state, app.update) : []);
 
 	/** The action waiting for the user's confirmation. */
 	let asking = $state<AppAction | null>(null);
-	const dialog = $derived(asking ? actionDialog(asking, app.name, app.update) : null);
+	/** What an update brought when its dialog opened: confirming sends that, nothing newer. */
+	let askedUpdate = $state<AppUpdate | null>(null);
+	const dialog = $derived(asking ? actionDialog(asking, app.name, askedUpdate) : null);
+	// The dialog no longer matches the app (the link dropped, the app changed state, or another
+	// update appeared): close it rather than confirm something the user did not see.
+	$effect(() => {
+		if (asking && (!actions.includes(asking) || app.update !== askedUpdate)) asking = null;
+	});
 
 	/** The Update dialog's `app.upgrade_summary`: versions and changelog of a new version. */
 	type SummaryState =
@@ -90,15 +107,19 @@
 	function ask(action: AppAction) {
 		dismissAction(app.id);
 		asking = action;
+		askedUpdate = app.update;
 		snapshot = false;
 		summaryRequest++;
 		summary = null;
 		// Only a new version has a summary: TrueNAS refuses it for image-only updates.
-		if (action === 'update' && app.update === 'version') loadSummary();
+		if (action === 'update' && askedUpdate === 'version') loadSummary();
 	}
 
 	function confirmAction() {
-		if (asking) runAction(app.id, asking, actionCall(asking, app, snapshot));
+		if (asking) {
+			const call = actionCall(asking, { id: app.id, update: askedUpdate }, snapshot);
+			runAction(app.id, asking, call, app.state);
+		}
 		asking = null;
 	}
 </script>
@@ -152,7 +173,7 @@
 		onconfirm={confirmAction}
 		oncancel={() => (asking = null)}
 	>
-		{#if asking === 'update' && app.update === 'version'}
+		{#if asking === 'update' && askedUpdate === 'version'}
 			<div class="update">
 				{#if summary?.kind === 'ready'}
 					<p class="versions">

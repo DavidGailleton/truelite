@@ -3,7 +3,8 @@
 // has settled: its run stays `done` until the page sees the new state ({@link finishAction}).
 import { SvelteMap } from 'svelte/reactivity';
 import { actionError, type ActionRun, type AppAction, type JobCall } from './app-actions';
-import { nas } from './nas.svelte';
+import type { AppState } from './apps';
+import { nas, onNasClose } from './nas.svelte';
 import { NasError } from './ws';
 
 /** A done run is dropped after this even if the app never reached its new state. */
@@ -15,6 +16,9 @@ const SETTLE_MAX_MS = 120_000;
 const MIN_SHOWN_MS = 2_000;
 
 const runs = new SvelteMap<string, ActionRun>();
+// Another account may log in next in this tab: its pages never show these runs. Callbacks of
+// pending calls find their run gone and drop their updates.
+onNasClose(() => runs.clear());
 
 /** The running or failed action of app `id`, if any. */
 export function actionRun(id: string): ActionRun | undefined {
@@ -32,6 +36,12 @@ export function finishAction(id: string): void {
 	if (runs.get(id)?.done) runs.delete(id);
 }
 
+/** The page saw app `id` in `state`: a run started in another state now knows the app moved. */
+export function noteState(id: string, state: AppState): void {
+	const run = runs.get(id);
+	if (run && !run.left && state !== run.from) runs.set(id, { ...run, left: true });
+}
+
 /** Forgets a failed action of app `id`. */
 export function dismissAction(id: string): void {
 	if (runs.get(id)?.error !== null) runs.delete(id);
@@ -42,10 +52,10 @@ export function dismissAction(id: string): void {
  * it. A success leaves the run `done`: the app's new state comes later through the `app.query`
  * events, and the page then calls {@link finishAction}.
  */
-export function runAction(id: string, action: AppAction, call: JobCall): void {
+export function runAction(id: string, action: AppAction, call: JobCall, from: AppState): void {
 	if (isRunning(id)) return;
 	const started = Date.now();
-	const mine: ActionRun = { action, progress: null, done: false, error: null };
+	const mine: ActionRun = { action, progress: null, done: false, error: null, from, left: false };
 	runs.set(id, mine);
 	// This call's latest run; an update is dropped once the map holds another one (a later
 	// action, or the run was dismissed or finished).
@@ -79,7 +89,7 @@ export function runAction(id: string, action: AppAction, call: JobCall): void {
 					e instanceof NasError
 						? { code: e.code, message: e.message, errname: e.errname }
 						: { code: 'bad_request' as const, message: 'Something went wrong.' };
-				update({ action, progress: null, done: false, error: actionError(action, body) });
+				update({ ...current, progress: null, done: false, error: actionError(action, body) });
 			}
 		);
 }

@@ -91,6 +91,8 @@ describe('busyLine', () => {
 		progress: null,
 		done: false,
 		error: null,
+		from: 'stopped',
+		left: false,
 		...patch
 	});
 	const progress = { percent: 40, description: 'Pulling' };
@@ -122,6 +124,17 @@ describe('busyLine', () => {
 		const done = run({ action: 'update', done: true });
 		expect(busyLine(done, 'stopped')?.label).toBe('Waiting for the app to come back…');
 		expect(busyLine(done, 'running')).toBeNull();
+	});
+
+	it('does not end an action on a crashed app before the app has left that state', () => {
+		for (const action of ['start', 'update', 'restart'] as const) {
+			const done = run({ action, done: true, from: 'crashed' });
+			expect(busyLine(done, 'crashed')?.label).toMatch(/^Waiting/);
+			expect(busyLine(done, 'running')).toBeNull();
+			// It deployed, then crashed again: that is the end.
+			expect(busyLine({ ...done, left: true }, 'crashed')).toBeNull();
+		}
+		expect(busyLine(run({ action: 'stop', done: true, from: 'crashed' }), 'stopped')).toBeNull();
 	});
 
 	it('follows a start or stop it did not ask for, and stays quiet otherwise', () => {
