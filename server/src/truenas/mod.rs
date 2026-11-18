@@ -1,5 +1,5 @@
 //! TrueNAS middleware API client. This module is the only place that knows the TrueNAS API:
-//! endpoint, JSON-RPC wire format, error shapes, authentication and (later) events.
+//! endpoint, JSON-RPC wire format, error shapes, authentication and events.
 //! Login uses `auth.login_ex`, reconnects use `auth.generate_token` tokens; the SCRAM auth of
 //! TrueNAS 27 must also stay inside this module.
 //!
@@ -8,6 +8,7 @@
 mod auth;
 mod client;
 mod error;
+mod events;
 #[cfg(test)]
 mod mock;
 mod rpc;
@@ -17,6 +18,7 @@ mod tls;
 pub use auth::{LoginStep, PendingOtp, Secret, UserInfo, login};
 pub use client::{Client, Notification, Options, Scheme, check_url};
 pub use error::{AuthFailure, Error};
+pub use events::{Event, Subscription, Update, UpdateKind};
 pub use rpc::{ErrorData, RpcError};
 pub use session::{EndReason, Endpoint, Link, Session, SessionOptions};
 pub use tls::{Fingerprint, FingerprintParseError, client_config};

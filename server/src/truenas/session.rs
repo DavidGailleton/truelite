@@ -17,6 +17,7 @@ use tokio::time::Instant;
 use super::auth::{self, Secret, UserInfo};
 use super::client::{Client, Notification, Options};
 use super::error::{AuthFailure, Error};
+use super::events::{Release, Subscription, Topics};
 use super::tls::{Fingerprint, client_config};
 
 /// Where the NAS is and how to trust it.
@@ -72,6 +73,9 @@ pub struct SessionOptions {
     /// out an address after 20 auth requests in 60 s, so keep these well above that rate.
     pub backoff_min: Duration,
     pub backoff_max: Duration,
+    /// Events kept per subscribed event name for a slow consumer before it is told it missed
+    /// some ([`Event::Missed`](super::Event::Missed)).
+    pub event_buffer: usize,
 }
 
 impl Default for SessionOptions {
@@ -82,11 +86,13 @@ impl Default for SessionOptions {
             token_refresh: Duration::from_secs(300),
             backoff_min: Duration::from_secs(1),
             backoff_max: Duration::from_secs(30),
+            event_buffer: 64,
         }
     }
 }
 
-/// State of the upstream link, for the "reconnecting to NAS" UI and event re-subscription.
+/// State of the upstream link, for the "reconnecting to NAS" UI. Subscriptions are made again
+/// before the link is `Up` after a reconnect.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
     Up,
@@ -106,6 +112,10 @@ pub enum EndReason {
 
 enum Cmd {
     Logout(oneshot::Sender<()>),
+    Subscribe {
+        name: String,
+        reply: oneshot::Sender<Result<Subscription, Error>>,
+    },
     #[cfg(test)]
     KillUpstream,
 }
@@ -150,6 +160,8 @@ impl Session {
         let (cmd_tx, cmd_rx) = mpsc::channel(8);
         let (out_tx, out_rx) = mpsc::channel(opts.client.notification_buffer.max(1));
         let call_timeout = opts.client.call_timeout;
+        let (release_tx, releases) = mpsc::unbounded_channel();
+        let topics = Topics::new(opts.event_buffer, release_tx);
         let sup = Supervisor {
             endpoint,
             opts,
@@ -159,6 +171,8 @@ impl Session {
             client: client_tx,
             cmds: cmd_rx,
             out: out_tx,
+            topics,
+            releases,
         };
         tokio::spawn(sup.run(client, notifs));
         tracing::info!(user = %user.username, "logged in to the NAS");
@@ -178,13 +192,13 @@ impl Session {
         &self.inner.user
     }
 
-    /// Watch the link state; a change to [`Link::Up`] after a reconnect means event
-    /// subscriptions must be made again.
+    /// Watch the link state.
     pub fn link(&self) -> watch::Receiver<Link> {
         self.inner.link.clone()
     }
 
-    /// The session's notifications, across reconnects. Only the first caller gets them.
+    /// The session's notifications that are not events of a [`Subscription`], across
+    /// reconnects. Only the first caller gets them.
     pub fn take_notifications(&self) -> Option<mpsc::Receiver<Notification>> {
         self.inner
             .notifications
@@ -224,6 +238,28 @@ impl Session {
             .await?
             .start_call(method, params, timeout)
             .await
+    }
+
+    /// Subscribes to `event` (`alert.list`, `reporting.realtime`, …). Handles of the same event
+    /// share one subscription on the NAS; dropping the last one unsubscribes. After a reconnect
+    /// the subscription is made again and handles get [`Event::Resumed`](super::Event::Resumed).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Rpc`] when the NAS refuses the event (unknown, or a role is missing),
+    /// [`Error::LoggedOut`] when the session has ended, and the errors of [`Session::call`].
+    pub async fn subscribe(&self, event: &str) -> Result<Subscription, Error> {
+        self.client().await?;
+        let (reply, rx) = oneshot::channel();
+        self.inner
+            .cmds
+            .send(Cmd::Subscribe {
+                name: event.to_owned(),
+                reply,
+            })
+            .await
+            .map_err(|_| Error::LoggedOut)?;
+        rx.await.map_err(|_| Error::LoggedOut)?
     }
 
     /// Logs out on the NAS (`auth.logout`) and ends the session for every handle.
@@ -285,6 +321,8 @@ struct Supervisor {
     client: watch::Sender<Option<Client>>,
     cmds: mpsc::Receiver<Cmd>,
     out: mpsc::Sender<Notification>,
+    topics: Topics,
+    releases: mpsc::UnboundedReceiver<Release>,
 }
 
 impl Supervisor {
@@ -316,12 +354,14 @@ impl Supervisor {
                 // `None` here is the disconnect signal, after buffered events are delivered.
                 n = notifs.recv() => match n {
                     Some(n) => {
+                        let Some(n) = self.topics.dispatch(n) else { continue };
                         if let Err(mpsc::error::TrySendError::Full(n)) = self.out.try_send(n) {
                             tracing::warn!("session notification buffer full, dropping {}", n.method);
                         }
                     }
                     None => return Disconnect::Dropped,
                 },
+                Some(r) = self.releases.recv() => self.release(Some(client), r).await,
                 _ = refresh.tick() => self.refresh_token(client).await,
                 cmd = self.cmds.recv() => match cmd {
                     Some(Cmd::Logout(done)) => {
@@ -332,6 +372,10 @@ impl Supervisor {
                         self.end(EndReason::LoggedOut);
                         let _ = done.send(());
                         return Disconnect::Stop;
+                    }
+                    Some(Cmd::Subscribe { name, reply }) => {
+                        let res = self.subscribe(Some(client), &name).await;
+                        let _ = reply.send(res);
                     }
                     #[cfg(test)]
                     Some(Cmd::KillUpstream) => client.kill().await,
@@ -359,6 +403,7 @@ impl Supervisor {
     /// user logs out meanwhile.
     async fn reconnect(&mut self) -> Option<(Client, mpsc::Receiver<Notification>)> {
         self.client.send_replace(None);
+        self.topics.mark_down();
         let mut attempt: u32 = 0;
         loop {
             attempt = attempt.saturating_add(1);
@@ -371,6 +416,7 @@ impl Supervisor {
             match self.attempt().await {
                 Ok((client, notifs)) => {
                     tracing::info!(attempt, "reconnected to the NAS");
+                    self.resubscribe(&client).await;
                     self.client.send_replace(Some(client.clone()));
                     self.link.send_replace(Link::Up);
                     return Some((client, notifs));
@@ -391,10 +437,16 @@ impl Supervisor {
                                 let _ = done.send(());
                                 return None;
                             }
+                            // Sent just before the link dropped: made upstream once back.
+                            Some(Cmd::Subscribe { name, reply }) => {
+                                let res = self.subscribe(None, &name).await;
+                                let _ = reply.send(res);
+                            }
                             #[cfg(test)]
                             Some(Cmd::KillUpstream) => {}
                             None => return None,
                         },
+                        Some(r) = self.releases.recv() => self.release(None, r).await,
                     }
                 }
             }
@@ -425,6 +477,53 @@ impl Supervisor {
         Ok((client, notifs))
     }
 
+    /// A handle on `name`, subscribing upstream first if it is new. `client` is `None` while
+    /// disconnected: the topic is then subscribed by [`resubscribe`](Self::resubscribe).
+    async fn subscribe(
+        &mut self,
+        client: Option<&Client>,
+        name: &str,
+    ) -> Result<Subscription, Error> {
+        if let Some(sub) = self.topics.join(name) {
+            return Ok(sub);
+        }
+        let upstream = match client {
+            Some(c) => Some(c.call_as::<String>("core.subscribe", json!([name])).await?),
+            None => None,
+        };
+        tracing::debug!(event = name, "subscribed");
+        Ok(self.topics.insert(name, upstream))
+    }
+
+    async fn release(&mut self, client: Option<&Client>, r: Release) {
+        let Some(id) = self.topics.release(r) else {
+            return;
+        };
+        if let Some(c) = client
+            && let Err(e) = c.call("core.unsubscribe", json!([id])).await
+        {
+            tracing::debug!("core.unsubscribe failed: {e}");
+        }
+    }
+
+    /// Makes every subscription again on a new connection.
+    async fn resubscribe(&mut self, client: &Client) {
+        for name in self.topics.names() {
+            match client
+                .call_as::<String>("core.subscribe", json!([&*name]))
+                .await
+            {
+                Ok(id) => self.topics.resumed(&name, id),
+                // Dropped again: the next reconnect retries.
+                Err(Error::Closed) => {}
+                Err(e) => {
+                    tracing::warn!(event = %name, "cannot subscribe again: {e}");
+                    self.topics.end(&name, e);
+                }
+            }
+        }
+    }
+
     fn end(&self, reason: EndReason) {
         self.client.send_replace(None);
         self.link.send_replace(Link::Ended(reason));
@@ -450,6 +549,7 @@ fn backoff(opts: &SessionOptions, attempt: u32) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::super::auth::{LoginStep, login};
+    use super::super::events::{Event, Update, UpdateKind};
     use super::super::mock::{Mock, Reply, within};
     use super::*;
     use std::collections::HashSet;
@@ -461,6 +561,7 @@ mod tests {
         otp_pending: HashSet<usize>,
         tokens: Vec<String>,
         reject_tokens: bool,
+        subscriptions: usize,
     }
 
     fn user_info(name: &str) -> Value {
@@ -537,6 +638,15 @@ mod tests {
                     nas.authed.remove(&conn);
                     Reply::Result(Value::Null)
                 }
+                "core.subscribe" if *p == "pool.query" => Reply::Error(
+                    json!({"code": -32001, "message": "Method call error", "data": {
+                    "error": 13, "errname": "EACCES", "reason": "Not authorized"}}),
+                ),
+                "core.subscribe" => {
+                    nas.subscriptions += 1;
+                    Reply::Result(json!(format!("sub-{}", nas.subscriptions)))
+                }
+                "core.unsubscribe" => Reply::Result(Value::Null),
                 "fast" => Reply::Result(json!("fast")),
                 "slow" => Reply::Delay(
                     Duration::from_millis(300),
@@ -559,6 +669,7 @@ mod tests {
             token_refresh: Duration::from_secs(60),
             backoff_min: Duration::from_millis(20),
             backoff_max: Duration::from_millis(400),
+            event_buffer: 64,
         }
     }
 
@@ -846,6 +957,236 @@ mod tests {
         let text = format!("{s:?} {ep:?}");
         assert!(!text.contains("secret") && !text.contains(&token), "{text}");
         drop(mock);
+    }
+
+    fn event(collection: &str, n: i64) -> Value {
+        json!({"jsonrpc": "2.0", "method": "collection_update", "params": {
+            "msg": "added", "collection": collection, "id": n, "fields": {"n": n}}})
+    }
+
+    async fn next(sub: &mut Subscription) -> Event {
+        within(sub.recv()).await.expect("subscription closed")
+    }
+
+    fn update(e: Event) -> Arc<Update> {
+        match e {
+            Event::Update(u) => u,
+            other => panic!("expected an update, got {other:?}"),
+        }
+    }
+
+    fn requests_of(mock: &Mock, method: &str) -> Vec<Value> {
+        mock.requests()
+            .into_iter()
+            .filter(|r| r.method == method)
+            .map(|r| r.params)
+            .collect()
+    }
+
+    /// Waits until the supervisor has handled everything pushed so far: a marker notification
+    /// that is no event comes out of `take_notifications` after them.
+    async fn settled(mock: &Mock, n: &mut mpsc::Receiver<Notification>) {
+        mock.push(json!({"jsonrpc": "2.0", "method": "marker", "params": {}}));
+        while within(n.recv()).await.unwrap().method != "marker" {}
+    }
+
+    #[tokio::test]
+    async fn an_event_reaches_its_subscriber() {
+        let (mock, _nas, ep) = start().await;
+        let s = admin(&ep, opts()).await;
+        let mut other = s.take_notifications().unwrap();
+        let mut sub = within(s.subscribe("alert.list")).await.unwrap();
+        assert_eq!(sub.name(), "alert.list");
+        assert_eq!(
+            requests_of(&mock, "core.subscribe"),
+            [json!(["alert.list"])]
+        );
+        mock.push(event("disk.query", 1));
+        mock.push(event("alert.list", 2));
+        let u = update(next(&mut sub).await);
+        assert_eq!(u.kind, UpdateKind::Added);
+        assert_eq!(
+            (u.id.clone(), u.fields.clone()),
+            (Some(json!(2)), json!({"n": 2}))
+        );
+        // An event nobody subscribed to still reaches the plain notification stream.
+        assert_eq!(
+            within(other.recv()).await.unwrap().params["collection"],
+            "disk.query"
+        );
+    }
+
+    #[tokio::test]
+    async fn two_subscribers_share_one_upstream_subscription() {
+        let (mock, _nas, ep) = start().await;
+        let s = admin(&ep, opts()).await;
+        let mut a = within(s.subscribe("alert.list")).await.unwrap();
+        let mut b = within(s.clone().subscribe("alert.list")).await.unwrap();
+        assert_eq!(requests_of(&mock, "core.subscribe").len(), 1);
+        mock.push(event("alert.list", 1));
+        assert_eq!(update(next(&mut a).await).id, Some(json!(1)));
+        assert_eq!(update(next(&mut b).await).id, Some(json!(1)));
+    }
+
+    #[tokio::test]
+    async fn the_last_drop_unsubscribes_once() {
+        let (mock, _nas, ep) = start().await;
+        let s = admin(&ep, opts()).await;
+        let mut n = s.take_notifications().unwrap();
+        let a = within(s.subscribe("alert.list")).await.unwrap();
+        let b = within(s.subscribe("alert.list")).await.unwrap();
+        drop(a);
+        settled(&mock, &mut n).await;
+        assert!(requests_of(&mock, "core.unsubscribe").is_empty());
+        drop(b);
+        within(async {
+            while requests_of(&mock, "core.unsubscribe").is_empty() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        assert_eq!(requests_of(&mock, "core.unsubscribe"), [json!(["sub-1"])]);
+        // The next subscriber subscribes upstream again.
+        let _c = within(s.subscribe("alert.list")).await.unwrap();
+        assert_eq!(requests_of(&mock, "core.subscribe").len(), 2);
+    }
+
+    /// Issue #12: subscriptions are made again on the new connection before the link is `Up`.
+    #[tokio::test]
+    async fn subscriptions_come_back_after_a_reconnect() {
+        let (mock, _nas, ep) = start().await;
+        let s = admin(&ep, opts()).await;
+        let mut sub = within(s.subscribe("alert.list")).await.unwrap();
+        reconnected(&s, async { mock.kill() }).await;
+        assert!(methods_on(&mock, 2).contains(&"core.subscribe".to_owned()));
+        assert!(matches!(next(&mut sub).await, Event::Resumed));
+        mock.push(event("alert.list", 7));
+        assert_eq!(update(next(&mut sub).await).id, Some(json!(7)));
+    }
+
+    #[tokio::test]
+    async fn a_refused_event_is_a_typed_error() {
+        let (mock, _nas, ep) = start().await;
+        let s = admin(&ep, opts()).await;
+        for _ in 0..2 {
+            let err = within(s.subscribe("pool.query")).await.unwrap_err();
+            let Error::Rpc(e) = &err else {
+                panic!("expected Rpc, got {err:?}")
+            };
+            assert_eq!(e.data.as_ref().unwrap().errname.as_deref(), Some("EACCES"));
+        }
+        // Nothing was registered: the second try asked the NAS again.
+        assert_eq!(requests_of(&mock, "core.subscribe").len(), 2);
+    }
+
+    #[tokio::test]
+    async fn the_nas_ending_a_subscription_ends_it() {
+        let (mock, _nas, ep) = start().await;
+        let s = admin(&ep, opts()).await;
+        let mut old = within(s.subscribe("alert.list")).await.unwrap();
+        mock.push(
+            json!({"jsonrpc": "2.0", "method": "notify_unsubscribed", "params": {
+            "collection": "alert.list", "error": {"error": 13, "errname": "EACCES",
+            "reason": "Not authorized", "trace": null, "extra": [], "py_exception": ""}}}),
+        );
+        let Event::Ended(e) = next(&mut old).await else {
+            panic!("expected Ended")
+        };
+        assert!(matches!(*e, Error::Rpc(_)), "{e:?}");
+        assert!(within(old.recv()).await.is_none());
+
+        let mut new = within(s.subscribe("alert.list")).await.unwrap();
+        assert_eq!(requests_of(&mock, "core.subscribe").len(), 2);
+        // Dropping a handle of the ended subscription leaves the new one alone.
+        drop(old);
+        mock.push(event("alert.list", 3));
+        assert_eq!(update(next(&mut new).await).id, Some(json!(3)));
+        assert!(requests_of(&mock, "core.unsubscribe").is_empty());
+    }
+
+    #[tokio::test]
+    async fn logout_closes_subscriptions() {
+        let (_mock, _nas, ep) = start().await;
+        let s = admin(&ep, opts()).await;
+        let mut sub = within(s.subscribe("alert.list")).await.unwrap();
+        within(s.logout()).await;
+        assert!(within(sub.recv()).await.is_none());
+        let err = within(s.subscribe("alert.list")).await.unwrap_err();
+        assert!(matches!(err, Error::LoggedOut), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn a_slow_subscriber_is_told_it_missed_events() {
+        let (mock, _nas, ep) = start().await;
+        let s = admin(
+            &ep,
+            SessionOptions {
+                event_buffer: 2,
+                ..opts()
+            },
+        )
+        .await;
+        let mut n = s.take_notifications().unwrap();
+        let mut sub = within(s.subscribe("alert.list")).await.unwrap();
+        for i in 1..=4 {
+            mock.push(event("alert.list", i));
+        }
+        settled(&mock, &mut n).await;
+        assert!(matches!(next(&mut sub).await, Event::Missed(2)));
+        assert_eq!(update(next(&mut sub).await).id, Some(json!(3)));
+        assert_eq!(update(next(&mut sub).await).id, Some(json!(4)));
+    }
+
+    #[tokio::test]
+    async fn subscribing_while_reconnecting_waits_for_the_link() {
+        let (mock, _nas, ep) = start().await;
+        let s = admin(&ep, opts()).await;
+        mock.set_down(true);
+        mock.kill();
+        wait_link(&s, |l| matches!(l, Link::Reconnecting { .. })).await;
+        let pending = tokio::spawn({
+            let s = s.clone();
+            async move { s.subscribe("alert.list").await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        mock.set_down(false);
+        let mut sub = within(pending).await.unwrap().unwrap();
+        mock.push(event("alert.list", 1));
+        assert_eq!(update(next(&mut sub).await).id, Some(json!(1)));
+    }
+
+    /// Against a real NAS: subscribe to `reporting.realtime` and wait for one event. Receiving
+    /// it proves events are routed by the name given to `core.subscribe`.
+    /// Same variables as `nas_login_smoke`; `cargo test nas_events_smoke -- --ignored --nocapture`.
+    #[tokio::test]
+    #[ignore = "needs a real NAS and credentials"]
+    async fn nas_events_smoke() {
+        let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("{k} not set"));
+        let pin: Fingerprint = var("TRUELITE_NAS_FINGERPRINT").parse().unwrap();
+        let ep = Endpoint::new(var("TRUELITE_NAS_URL"), Some(pin)).unwrap();
+        let password = Secret::new(var("TRUELITE_NAS_PASSWORD"));
+        let step = within(login(
+            &ep,
+            SessionOptions::default(),
+            &var("TRUELITE_NAS_USER"),
+            password,
+        ))
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+        let LoginStep::Done(s) = step else {
+            panic!("this account needs a one-time code; use one without 2FA")
+        };
+        let mut sub = within(s.subscribe("reporting.realtime")).await.unwrap();
+        let u = update(next(&mut sub).await);
+        let keys: Vec<_> = u
+            .fields
+            .as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+        println!("reporting.realtime {:?}: {keys:?}", u.kind);
+        drop(sub);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        within(s.logout()).await;
     }
 
     /// Against a real NAS: log in, drop the upstream socket, check the session comes back.

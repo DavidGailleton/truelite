@@ -26,7 +26,7 @@ shell page and survive an upstream reconnect.
 - [x] #9 TrueNAS client: connect, JSON-RPC id matching, API version pin
 - [x] #10 Pin the NAS TLS certificate fingerprint
 - [x] #11 Login with auth.login_ex and reconnect with auth.generate_token
-- [ ] #12 Event subscriptions via core.subscribe
+- [x] #12 Event subscriptions via core.subscribe
 - [ ] #13 Mock TrueNAS JSON-RPC server for tests
 - [ ] #14 Sessions: cookie, idle timeout, logout
 - [ ] #15 Login endpoint with rate limit
