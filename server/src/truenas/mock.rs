@@ -439,11 +439,15 @@ pub fn fake_nas() -> (
                 "active_workloads": {"container_details": [{"id": "c1", "state": "running"}]},
                 "metadata": {"description": "Media server"}}])),
             // Actions are jobs: an unrelated job, this call's job at 50 %, then the reply 100 ms later.
-            "app.start" | "app.stop" | "app.redeploy" if *p == "locked" => Reply::Error(
-                json!({"code": -32001, "message": "Method call error", "data": {
+            "app.start" | "app.stop" | "app.redeploy" | "app.upgrade" | "app.pull_images"
+                if *p == "locked" =>
+            {
+                Reply::Error(
+                    json!({"code": -32001, "message": "Method call error", "data": {
                 "error": 13, "errname": "EACCES", "reason": "Not authorized"}}),
-            ),
-            "app.start" | "app.stop" | "app.redeploy" => {
+                )
+            }
+            "app.start" | "app.stop" | "app.redeploy" | "app.upgrade" | "app.pull_images" => {
                 let job = |id: u32, ids: &str, percent: u32| {
                     format!(
                         r#"{{"jsonrpc":"2.0","method":"collection_update","params":{{"msg":"added","collection":"core.get_jobs","id":{id},"fields":{{"id":{id},"message_ids":[{ids}],"method":"{method}","state":"RUNNING","progress":{{"percent":{percent},"description":"Working on {app}","extra":null}}}}}}}}"#,
@@ -458,6 +462,10 @@ pub fn fake_nas() -> (
                     ),
                 ])
             }
+            "app.upgrade_summary" => Reply::Result(json!({"latest_version": "1.3.2",
+                "latest_human_version": "10.11.2_1.3.2", "upgrade_version": "1.3.2",
+                "upgrade_human_version": "10.11.2_1.3.2", "changelog": null,
+                "available_versions_for_upgrade": [{"version": "1.3.2", "human_version": "10.11.2_1.3.2"}]})),
             "fast" => Reply::Result(json!("fast")),
             "slow" => Reply::Delay(
                 Duration::from_millis(300),

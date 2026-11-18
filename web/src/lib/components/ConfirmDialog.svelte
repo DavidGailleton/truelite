@@ -2,12 +2,18 @@
 	// Asks before an action (ui-style: every action is confirmed). A native modal `<dialog>`:
 	// focus is trapped, Esc cancels, the first control (Cancel, or the name field) gets focus.
 	// `typeToConfirm` makes the user type a name first (deletes, reboot: phases 5–6).
+	// `children` adds content under the text (the Update dialog's versions and options); `busy`
+	// holds the confirm button while that content loads.
+	import type { Snippet } from 'svelte';
+
 	let {
 		title,
 		text,
 		confirm,
 		destructive = false,
 		typeToConfirm,
+		busy = false,
+		children,
 		onconfirm,
 		oncancel
 	}: {
@@ -16,12 +22,14 @@
 		confirm: string;
 		destructive?: boolean;
 		typeToConfirm?: string;
+		busy?: boolean;
+		children?: Snippet;
 		onconfirm: () => void;
 		oncancel: () => void;
 	} = $props();
 
 	let typed = $state('');
-	const ready = $derived(typeToConfirm === undefined || typed === typeToConfirm);
+	const ready = $derived(!busy && (typeToConfirm === undefined || typed === typeToConfirm));
 	let confirmed = false;
 
 	function open(dialog: HTMLDialogElement) {
@@ -47,6 +55,7 @@
 	<form method="dialog" {onsubmit}>
 		<h2 id="confirm-title">{title}</h2>
 		<p id="confirm-text">{text}</p>
+		{@render children?.()}
 		{#if typeToConfirm !== undefined}
 			<label>
 				Type <strong>{typeToConfirm}</strong> to confirm

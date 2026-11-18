@@ -27,13 +27,20 @@ const STATES: Record<string, AppState> = {
 	CRASHED: 'crashed'
 };
 
+/**
+ * What updating the app means: `version`, a newer catalog version, or for custom apps newer
+ * images (`upgrade_available`: `app.upgrade`); `images`, newer images of the same version only
+ * (`image_updates_available`: `app.pull_images`).
+ */
+export type AppUpdate = 'version' | 'images';
+
 export interface App {
 	/** The app name; TrueNAS uses it as the id. */
 	id: string;
 	name: string;
 	state: AppState;
-	/** A new catalog version or newer container images. */
-	updateAvailable: boolean;
+	/** A new catalog version or newer container images; `null` when up to date. */
+	update: AppUpdate | null;
 	/** Installed from a compose file, not the catalog. */
 	custom: boolean;
 	/** The version of the app itself (`10.11.2`), not the catalog revision; `null` if unknown. */
@@ -68,7 +75,12 @@ export function parseApp(raw: unknown): App | null {
 		id,
 		name: isStr(name) && name !== '' ? name : id,
 		state,
-		updateAvailable: raw.upgrade_available === true || raw.image_updates_available === true,
+		update:
+			raw.upgrade_available === true
+				? 'version'
+				: raw.image_updates_available === true
+					? 'images'
+					: null,
 		custom: raw.custom_app === true,
 		version: appVersion(raw.human_version, raw.version)
 	};
@@ -108,7 +120,7 @@ export interface AppSummary {
 export function summarize(apps: readonly App[]): AppSummary {
 	const s: AppSummary = { running: 0, stopped: 0, starting: 0, updates: 0, crashed: [] };
 	for (const app of apps) {
-		if (app.updateAvailable) s.updates++;
+		if (app.update !== null) s.updates++;
 		if (app.state === 'running') s.running++;
 		else if (app.state === 'stopped') s.stopped++;
 		else if (app.state === 'crashed') s.crashed.push(app);
@@ -142,7 +154,7 @@ function matches(app: App, filter: AppFilter): boolean {
 		case 'not-running':
 			return app.state !== 'running';
 		case 'updates':
-			return app.updateAvailable;
+			return app.update !== null;
 	}
 }
 

@@ -1,8 +1,8 @@
-// Running app actions (#33), kept per app for the whole visit, so a job's progress survives
+// Running app actions (#33, #34), kept per app for the whole visit, so a job's progress survives
 // leaving the app's page and coming back. One action per app at a time. A job ends before the app
 // has settled: its run stays `done` until the page sees the new state ({@link finishAction}).
 import { SvelteMap } from 'svelte/reactivity';
-import { ACTION_METHODS, actionError, type ActionRun, type AppAction } from './app-actions';
+import { actionError, type ActionRun, type AppAction, type JobCall } from './app-actions';
 import { nas } from './nas.svelte';
 import { NasError } from './ws';
 
@@ -38,10 +38,11 @@ export function dismissAction(id: string): void {
 }
 
 /**
- * Runs `action` on app `id` and follows its job. A success leaves the run `done`: the app's new
- * state comes later through the `app.query` events, and the page then calls {@link finishAction}.
+ * Runs `action` on app `id` through the job `call` (`actionCall` in app-actions.ts) and follows
+ * it. A success leaves the run `done`: the app's new state comes later through the `app.query`
+ * events, and the page then calls {@link finishAction}.
  */
-export function runAction(id: string, action: AppAction): void {
+export function runAction(id: string, action: AppAction, call: JobCall): void {
 	if (isRunning(id)) return;
 	const started = Date.now();
 	const mine: ActionRun = { action, progress: null, done: false, error: null };
@@ -56,7 +57,7 @@ export function runAction(id: string, action: AppAction): void {
 		return true;
 	};
 	nas()
-		.call(ACTION_METHODS[action], [id], {
+		.call(call.method, call.params, {
 			timeout: null,
 			onProgress: (progress) => update({ ...current, progress })
 		})

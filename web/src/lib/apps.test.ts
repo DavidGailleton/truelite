@@ -29,7 +29,7 @@ const app = (id: string, state: App['state'], updateAvailable = false): App => (
 	id,
 	name: id,
 	state,
-	updateAvailable,
+	update: updateAvailable ? 'version' : null,
 	custom: false,
 	version: null
 });
@@ -40,15 +40,18 @@ describe('parseApp', () => {
 			id: 'jellyfin',
 			name: 'jellyfin',
 			state: 'running',
-			updateAvailable: false,
+			update: null,
 			custom: true,
 			version: '10.11.2'
 		});
 	});
 
 	it('flags an update from either field', () => {
-		expect(parseApp(raw({ upgrade_available: true }))?.updateAvailable).toBe(true);
-		expect(parseApp(raw({ image_updates_available: true }))?.updateAvailable).toBe(true);
+		expect(parseApp(raw({ upgrade_available: true }))?.update).toBe('version');
+		expect(parseApp(raw({ image_updates_available: true }))?.update).toBe('images');
+		expect(parseApp(raw({ upgrade_available: true, image_updates_available: true }))?.update).toBe(
+			'version'
+		);
 	});
 
 	it('reads every state', () => {

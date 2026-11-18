@@ -16,6 +16,12 @@
 //!
 //! Actions (#33): `app.start`, `app.stop`, `app.redeploy` are jobs taking `[app_name]` (role
 //! `APPS_WRITE`); [`app_name_param`] checks and rebuilds their params.
+//!
+//! Updates (#34): `app.upgrade` (`[app_name, {app_version, values, snapshot_hostpaths}]`) when
+//! `upgrade_available`, else `app.pull_images` (`[app_name, {redeploy}]`) for newer images of the
+//! same version (middlewared `plugins/apps/upgrade.py`, `pull_images.py`, TS-25.10.8). Both are
+//! jobs (role `APPS_WRITE`). [`app_upgrade_param`] always asks for the latest version and never
+//! forwards `values`; [`app_pull_images_param`] always redeploys.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -76,6 +82,33 @@ fn app_name_ok(name: &str) -> bool {
 pub fn app_name_param(params: &Value) -> Option<Value> {
     match params.as_array()?.as_slice() {
         [Value::String(name)] if app_name_ok(name) => Some(json!([name])),
+        _ => None,
+    }
+}
+
+/// The params of `app.upgrade`: the browser sends `[app_name]` or
+/// `[app_name, {"snapshot_hostpaths": bool}]`; rebuilt as
+/// `[app_name, {"app_version": "latest", "snapshot_hostpaths": bool}]`. Any other key (`values`,
+/// `app_version`) or shape is refused.
+pub fn app_upgrade_param(params: &Value) -> Option<Value> {
+    let (name, snapshot) = match params.as_array()?.as_slice() {
+        [Value::String(name)] => (name, false),
+        [Value::String(name), Value::Object(options)] => match options.get("snapshot_hostpaths") {
+            Some(Value::Bool(b)) if options.len() == 1 => (name, *b),
+            None if options.is_empty() => (name, false),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    app_name_ok(name)
+        .then(|| json!([name, {"app_version": "latest", "snapshot_hostpaths": snapshot}]))
+}
+
+/// The params of `app.pull_images`: `[app_name]` from the browser, rebuilt as
+/// `[app_name, {"redeploy": true}]` (newer images are only useful once the app runs them).
+pub fn app_pull_images_param(params: &Value) -> Option<Value> {
+    match params.as_array()?.as_slice() {
+        [Value::String(name)] if app_name_ok(name) => Some(json!([name, {"redeploy": true}])),
         _ => None,
     }
 }
@@ -266,6 +299,52 @@ mod tests {
             json!([1]),
         ] {
             assert_eq!(app_name_param(&refused), None, "{refused}");
+        }
+    }
+
+    #[test]
+    fn upgrade_params_ask_for_the_latest_version_and_nothing_else() {
+        let latest = |name: &str, snap: bool| json!([name, {"app_version": "latest", "snapshot_hostpaths": snap}]);
+        assert_eq!(
+            app_upgrade_param(&json!(["plex"])),
+            Some(latest("plex", false))
+        );
+        assert_eq!(
+            app_upgrade_param(&json!(["plex", {}])),
+            Some(latest("plex", false))
+        );
+        assert_eq!(
+            app_upgrade_param(&json!(["plex", {"snapshot_hostpaths": true}])),
+            Some(latest("plex", true))
+        );
+        for refused in [
+            json!([]),
+            json!(["Plex"]),
+            json!(["plex", {"snapshot_hostpaths": "yes"}]),
+            json!(["plex", {"snapshot_hostpaths": true, "values": {"x": 1}}]),
+            json!(["plex", {"values": {}}]),
+            json!(["plex", {"app_version": "1.0.0"}]),
+            json!(["plex", true]),
+            json!(["plex", {}, {}]),
+            json!("plex"),
+        ] {
+            assert_eq!(app_upgrade_param(&refused), None, "{refused}");
+        }
+    }
+
+    #[test]
+    fn pull_images_params_always_redeploy() {
+        assert_eq!(
+            app_pull_images_param(&json!(["plex"])),
+            Some(json!(["plex", {"redeploy": true}]))
+        );
+        for refused in [
+            json!([]),
+            json!(["Plex"]),
+            json!(["plex", {"redeploy": false}]),
+            json!(["plex", {}]),
+        ] {
+            assert_eq!(app_pull_images_param(&refused), None, "{refused}");
         }
     }
 }

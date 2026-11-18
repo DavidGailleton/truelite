@@ -137,7 +137,7 @@
 										{/if}
 									</div>
 									<div class="pills">
-										{#if app.updateAvailable}<StatusPill label="Update" tone="warning" />{/if}
+										{#if app.update}<StatusPill label="Update" tone="warning" />{/if}
 										<StatusPill {...state} />
 									</div>
 								</a>

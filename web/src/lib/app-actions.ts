@@ -1,26 +1,48 @@
 // Start, stop and restart an app (#33): TrueNAS jobs `app.start`, `app.stop`, `app.redeploy`
-// (api.truenas.com v25.10; role APPS_WRITE). Which actions fit the app's state, and the words of
-// their buttons and dialogs. Framework-free so it can be unit-tested: the Svelte binding lives in
-// app-actions.svelte.ts.
-import type { AppState } from './apps';
+// (api.truenas.com v25.10; role APPS_WRITE); update it (#34, app-upgrade.ts). Which actions fit
+// the app's state, and the words of their buttons and dialogs. Framework-free so it can be
+// unit-tested: the Svelte binding lives in app-actions.svelte.ts.
+import type { App, AppState, AppUpdate } from './apps';
+import { updateCall } from './app-upgrade';
 import type { ErrorBody, JobProgress } from './ws';
 
-export type AppAction = 'start' | 'stop' | 'restart';
+export type AppAction = 'start' | 'stop' | 'restart' | 'update';
 
-export const ACTION_METHODS: Record<AppAction, string> = {
+/** The jobs of the actions taking only the app name. */
+export const ACTION_METHODS: Record<Exclude<AppAction, 'update'>, string> = {
 	start: 'app.start',
 	stop: 'app.stop',
 	// TrueNAS's own Restart: recreates the app's containers.
 	restart: 'app.redeploy'
 };
 
-/** The actions that make sense in `state`, in button order. None while the app is changing. */
-export function appActions(state: AppState): AppAction[] {
+/** A job method and its params, as the bridge allowlists them. */
+export interface JobCall {
+	method: string;
+	params: unknown[];
+}
+
+/** The job call of `action` on `app`; `snapshot` asks an upgrade to snapshot host paths first. */
+export function actionCall(
+	action: AppAction,
+	app: Pick<App, 'id' | 'update'>,
+	snapshot = false
+): JobCall {
+	return action === 'update'
+		? updateCall(app, snapshot)
+		: { method: ACTION_METHODS[action], params: [app.id] };
+}
+
+/**
+ * The actions that make sense in `state`, in button order. None while the app is changing.
+ * Update needs a running (or crashed) app: TrueNAS refuses to upgrade a stopped one.
+ */
+export function appActions(state: AppState, update: AppUpdate | null = null): AppAction[] {
 	switch (state) {
 		case 'running':
-			return ['restart', 'stop'];
+			return update ? ['update', 'restart', 'stop'] : ['restart', 'stop'];
 		case 'crashed':
-			return ['start', 'stop'];
+			return update ? ['start', 'update', 'stop'] : ['start', 'stop'];
 		case 'stopped':
 			return ['start'];
 		case 'deploying':
@@ -32,14 +54,16 @@ export function appActions(state: AppState): AppAction[] {
 export const ACTION_LABELS: Record<AppAction, string> = {
 	start: 'Start',
 	stop: 'Stop',
-	restart: 'Restart'
+	restart: 'Restart',
+	update: 'Update'
 };
 
 /** What the progress line says while the action runs and the NAS gives no description. */
 export const ACTION_RUNNING: Record<AppAction, string> = {
 	start: 'Starting…',
 	stop: 'Stopping…',
-	restart: 'Restarting…'
+	restart: 'Restarting…',
+	update: 'Updating…'
 };
 
 /**
@@ -49,14 +73,16 @@ export const ACTION_RUNNING: Record<AppAction, string> = {
 const ACTION_DONE: Record<AppAction, readonly AppState[]> = {
 	start: ['running', 'crashed'],
 	stop: ['stopped', 'crashed'],
-	restart: ['running', 'crashed']
+	restart: ['running', 'crashed'],
+	update: ['running', 'crashed']
 };
 
 /** What the progress line says once the job is over but the app hasn't settled yet. */
 const ACTION_SETTLING: Record<AppAction, string> = {
 	start: 'Waiting for the app to start…',
 	stop: 'Waiting for the app to stop…',
-	restart: 'Waiting for the app to come back…'
+	restart: 'Waiting for the app to come back…',
+	update: 'Waiting for the app to come back…'
 };
 
 /** An action as the page tracks it (app-actions.svelte.ts). */
@@ -101,7 +127,12 @@ export interface ActionDialog {
 	destructive: boolean;
 }
 
-export function actionDialog(action: AppAction, name: string): ActionDialog {
+/** The dialog of `action` on app `name`; `update` says what an update brings. */
+export function actionDialog(
+	action: AppAction,
+	name: string,
+	update: AppUpdate | null = null
+): ActionDialog {
 	switch (action) {
 		case 'start':
 			return {
@@ -124,10 +155,20 @@ export function actionDialog(action: AppAction, name: string): ActionDialog {
 				confirm: 'Restart',
 				destructive: false
 			};
+		case 'update':
+			return {
+				title: `Update ${name}?`,
+				text:
+					update === 'images'
+						? 'Newer images of the same version are downloaded, then the app restarts. It is unavailable for a moment.'
+						: 'It stops, downloads the new version and starts again. This can take a few minutes.',
+				confirm: 'Update',
+				destructive: false
+			};
 	}
 }
 
-/** Roles that may start and stop apps (TrueNAS expands FULL_ADMIN, but don't rely on it). */
+/** Roles that may start, stop and update apps (TrueNAS expands FULL_ADMIN, but don't rely on it). */
 export function canChangeApps(roles: readonly string[] | undefined): boolean {
 	return roles !== undefined && (roles.includes('APPS_WRITE') || roles.includes('FULL_ADMIN'));
 }
@@ -136,7 +177,7 @@ export function canChangeApps(roles: readonly string[] | undefined): boolean {
 export function actionError(action: AppAction, error: ErrorBody): string {
 	const verb = ACTION_LABELS[action].toLowerCase();
 	if (error.errname === 'EACCES') {
-		return "Your account can't start or stop apps. It needs the Apps write role (APPS_WRITE) on the NAS.";
+		return "Your account can't change apps. It needs the Apps write role (APPS_WRITE) on the NAS.";
 	}
 	switch (error.code) {
 		case 'disconnected':

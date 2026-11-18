@@ -20,6 +20,8 @@ const METHODS: &[&str] = &[
     "pool.dataset.query",
     // Dashboard card, apps page, app detail (one app by id), with `select` (APPS_READ).
     "app.query",
+    // App detail: versions and changelog in the Update dialog (APPS_READ). A read, despite its name.
+    "app.upgrade_summary",
 ];
 
 /// Events the web app may subscribe to, by exact name.
@@ -61,6 +63,13 @@ const JOB_METHODS: &[(&str, JobCheck)] = &[
     ("app.start", crate::truenas::apps::app_name_param),
     ("app.stop", crate::truenas::apps::app_name_param),
     ("app.redeploy", crate::truenas::apps::app_name_param),
+    // App detail: Update (APPS_WRITE). A new version: always the latest, `values` never forwarded.
+    ("app.upgrade", crate::truenas::apps::app_upgrade_param),
+    // App detail: Update when only newer images of the same version exist; always redeploys.
+    (
+        "app.pull_images",
+        crate::truenas::apps::app_pull_images_param,
+    ),
 ];
 
 /// Exact-name lists of the methods and events the bridge forwards. No prefixes, no wildcards.
@@ -200,9 +209,16 @@ mod tests {
             ".set",
             "dismiss",
             "restore",
+            ".pull",
+            ".rollback",
         ];
+        // Reads whose name looks like an action: checked one by one in the TrueNAS docs.
+        const READS: &[&str] = &["app.upgrade_summary"];
         let params = PARAM_EVENTS.iter().map(|(n, _)| n);
         for name in METHODS.iter().chain(EVENTS).chain(params) {
+            if READS.contains(name) {
+                continue;
+            }
             assert!(
                 !writes.iter().any(|w| name.contains(w)),
                 "{name} looks like an action"
@@ -218,8 +234,19 @@ mod tests {
             );
             assert_eq!(check(&serde_json::json!(["Plex"])), None);
         }
+        let upgrade = a.job("app.upgrade").unwrap();
+        assert_eq!(upgrade(&serde_json::json!(["plex", {"values": {}}])), None);
+        let pull = a.job("app.pull_images").unwrap();
+        assert_eq!(
+            pull(&serde_json::json!(["plex"])),
+            Some(serde_json::json!(["plex", {"redeploy": true}]))
+        );
+        assert!(!a.method("app.upgrade") && !a.method("app.pull_images"));
+        assert!(a.method("app.upgrade_summary") && a.job("app.upgrade_summary").is_none());
         for near in [
-            "app.upgrade",
+            "app.rollback",
+            "app.upgrade.",
+            "app.pull_images.",
             "app.delete",
             "app.start.",
             "App.start",

@@ -1030,13 +1030,49 @@ mod tests {
             let got = call(&mut ws, id, "app.start", params).await;
             assert_eq!(got["error"]["code"], "bad_request", "{got}");
         }
-        let got = call(&mut ws, 4, "app.upgrade", json!(["plex"])).await;
+        let got = call(&mut ws, 4, "app.rollback", json!(["plex"])).await;
         assert_eq!(got["error"]["code"], "not_allowed");
         assert!(!h.methods().iter().any(|m| m.starts_with("app.")));
 
         let got = call(&mut ws, 5, "app.redeploy", json!(["locked"])).await;
         assert_eq!(got["error"]["code"], "nas");
         assert_eq!(got["error"]["errname"], "EACCES");
+    }
+
+    /// #34: an update asks for the latest version with the browser's snapshot choice only.
+    #[tokio::test]
+    async fn an_upgrade_goes_upstream_with_rebuilt_params() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        send(
+            &mut ws,
+            json!({"op": "call", "id": 1, "method": "app.upgrade",
+                "params": ["plex", {"snapshot_hostpaths": true, "values": {"x": 1}}]}),
+        )
+        .await;
+        assert_eq!(next(&mut ws).await["error"]["code"], "bad_request");
+        send(
+            &mut ws,
+            json!({"op": "call", "id": 2, "method": "app.upgrade",
+                "params": ["plex", {"snapshot_hostpaths": true}]}),
+        )
+        .await;
+        assert_eq!(
+            next(&mut ws).await,
+            json!({"id": 2, "progress": {"percent": 50, "description": "Working on plex"}})
+        );
+        assert_eq!(next(&mut ws).await, json!({"id": 2, "result": null}));
+        let upgrades: Vec<Value> = h
+            .mock
+            .requests()
+            .into_iter()
+            .filter(|c| c.method == "app.upgrade")
+            .map(|c| c.params)
+            .collect();
+        assert_eq!(
+            upgrades,
+            [json!(["plex", {"app_version": "latest", "snapshot_hostpaths": true}])]
+        );
     }
 
     #[tokio::test]

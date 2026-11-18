@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	ACTION_METHODS,
+	actionCall,
 	actionDialog,
 	actionError,
 	appActions,
@@ -18,6 +19,27 @@ describe('appActions', () => {
 		expect(appActions('stopping')).toEqual([]);
 	});
 
+	it('offer Update first when one exists, never on a stopped or changing app', () => {
+		expect(appActions('running', 'version')).toEqual(['update', 'restart', 'stop']);
+		expect(appActions('crashed', 'images')).toEqual(['start', 'update', 'stop']);
+		expect(appActions('stopped', 'version')).toEqual(['start']);
+		expect(appActions('deploying', 'version')).toEqual([]);
+	});
+
+	it('build the job call of each action', () => {
+		const app = { id: 'plex', update: 'version' as const };
+		expect(actionCall('stop', app)).toEqual({ method: 'app.stop', params: ['plex'] });
+		expect(actionCall('restart', app)).toEqual({ method: 'app.redeploy', params: ['plex'] });
+		expect(actionCall('update', app, true)).toEqual({
+			method: 'app.upgrade',
+			params: ['plex', { snapshot_hostpaths: true }]
+		});
+		expect(actionCall('update', { id: 'plex', update: 'images' })).toEqual({
+			method: 'app.pull_images',
+			params: ['plex']
+		});
+	});
+
 	it('map to the allowlisted job methods', () => {
 		expect(ACTION_METHODS).toEqual({
 			start: 'app.start',
@@ -32,6 +54,11 @@ describe('actionDialog', () => {
 		expect(actionDialog('stop', 'plex')).toMatchObject({ title: 'Stop plex?', destructive: true });
 		expect(actionDialog('start', 'plex').destructive).toBe(false);
 		expect(actionDialog('restart', 'plex').confirm).toBe('Restart');
+		expect(actionDialog('update', 'plex', 'version')).toMatchObject({
+			title: 'Update plex?',
+			destructive: false
+		});
+		expect(actionDialog('update', 'plex', 'images').text).toContain('same version');
 	});
 });
 
@@ -86,6 +113,15 @@ describe('busyLine', () => {
 			'Waiting for the app to stop…'
 		);
 		expect(busyLine(run({ action: 'stop', done: true }), 'stopped')).toBeNull();
+	});
+
+	it('keeps an update on its progress while the NAS stops the app, then waits for it', () => {
+		const update = run({ action: 'update', progress });
+		expect(busyLine(update, 'stopping')).toEqual({ label: 'Updating…', progress });
+		expect(busyLine(update, 'stopped')).toEqual({ label: 'Updating…', progress });
+		const done = run({ action: 'update', done: true });
+		expect(busyLine(done, 'stopped')?.label).toBe('Waiting for the app to come back…');
+		expect(busyLine(done, 'running')).toBeNull();
 	});
 
 	it('follows a start or stop it did not ask for, and stays quiet otherwise', () => {
