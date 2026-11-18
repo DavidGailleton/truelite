@@ -1,17 +1,29 @@
 <script lang="ts">
 	// One app: state, version, web UI links, then its containers, ports and folders. Live through
-	// `app.query` events (each one about this app queries it again). Read-only until #33. Each
-	// container links to its live log (#32).
+	// `app.query` events (each one about this app queries it again). Each container links to its
+	// live log (#32). Start, stop and restart, confirmed in a dialog, with the job's progress (#33).
+	import {
+		ACTION_LABELS,
+		ACTION_RUNNING,
+		actionDialog,
+		appActions,
+		canChangeApps,
+		type AppAction
+	} from '#lib/app-actions.js';
+	import { actionRun, dismissAction, runAction } from '#lib/app-actions.svelte.js';
 	import { appMounts, containerStateLabel, portLabel } from '#lib/app-detail.js';
 	import { useAppDetail } from '#lib/app-detail.svelte.js';
 	import { stateLabel } from '#lib/apps.js';
 	import { cardView } from '#lib/card-state.js';
 	import { connection } from '#lib/nas.svelte.js';
+	import { session } from '#lib/session.svelte.js';
 	import Card from './Card.svelte';
 	import CardBadge from './CardBadge.svelte';
 	import CardNotice from './CardNotice.svelte';
+	import ConfirmDialog from './ConfirmDialog.svelte';
 	import EmptyState from './EmptyState.svelte';
 	import Icon from './Icon.svelte';
+	import JobProgress from './JobProgress.svelte';
 	import PageHeader from './PageHeader.svelte';
 	import StatusPill from './StatusPill.svelte';
 
@@ -34,11 +46,28 @@
 	});
 	const [primaryPortal, ...otherPortals] = $derived(detail?.portals ?? []);
 	const dim = $derived(view.kind === 'ready' && (view.paused || view.stale !== null));
+
+	const ACTION_ICONS = { start: 'play', stop: 'square', restart: 'rotate-cw' } as const;
+	const run = $derived(actionRun(id));
+	// Actions need the NAS link and the Apps write role; none while the app is changing.
+	const actions = $derived(
+		detail && view.kind === 'ready' && !view.paused && canChangeApps(session.user?.roles)
+			? appActions(detail.app.state)
+			: []
+	);
+	/** The action waiting for the user's confirmation. */
+	let asking = $state<AppAction | null>(null);
+	const dialog = $derived(asking && detail ? actionDialog(asking, detail.app.name) : null);
+
+	function confirmAction() {
+		if (asking) runAction(id, asking);
+		asking = null;
+	}
 </script>
 
 <a class="back" href="/apps"><Icon name="arrow-left" size={16} />Apps</a>
 
-{#snippet actions()}
+{#snippet headerActions()}
 	{#if detail && detail.containers.length > 0}
 		<a class="button-outline link-button" href="/apps/{encodeURIComponent(id)}/logs">
 			<Icon name="scroll-text" size={16} />Logs
@@ -56,7 +85,7 @@
 	title={detail?.app.name ?? id}
 	{subtitle}
 	loading={view.kind === 'loading'}
-	actions={primaryPortal || (detail && detail.containers.length > 0) ? actions : undefined}
+	actions={primaryPortal || (detail && detail.containers.length > 0) ? headerActions : undefined}
 />
 
 {#if app.missing}
@@ -86,6 +115,38 @@
 						/>{/if}
 				</div>
 				{#if detail.description}<p class="description">{detail.description}</p>{/if}
+				{#if run && run.error === null}
+					<JobProgress progress={run.progress} label={ACTION_RUNNING[run.action]} />
+				{:else if actions.length > 0}
+					<div class="app-actions">
+						{#each actions as action (action)}
+							<button
+								type="button"
+								class="button-outline action"
+								onclick={() => {
+									dismissAction(id);
+									asking = action;
+								}}
+							>
+								<Icon name={ACTION_ICONS[action]} size={16} />{ACTION_LABELS[action]}
+							</button>
+						{/each}
+					</div>
+				{/if}
+				{#if run?.error}
+					<div class="action-error" role="alert">
+						<Icon name="circle-alert" size={16} />
+						<p>{run.error}</p>
+						<button
+							type="button"
+							class="dismiss"
+							aria-label="Dismiss"
+							onclick={() => dismissAction(id)}
+						>
+							×
+						</button>
+					</div>
+				{/if}
 				{#if otherPortals.length > 0}
 					<ul class="portals">
 						{#each otherPortals as portal (portal.url)}
@@ -171,6 +232,10 @@
 			{/if}
 		{/if}
 	</div>
+{/if}
+
+{#if dialog}
+	<ConfirmDialog {...dialog} onconfirm={confirmAction} oncancel={() => (asking = null)} />
 {/if}
 
 <style>
@@ -264,6 +329,57 @@
 		min-height: 2rem;
 		color: var(--text-primary);
 		font-weight: var(--weight-medium);
+	}
+	.app-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+	}
+	.action {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-1);
+	}
+	.action-error {
+		display: flex;
+		align-items: flex-start;
+		gap: var(--space-2);
+		padding: var(--space-2) var(--space-3);
+		border-radius: var(--radius-md);
+		background: var(--destructive-tint);
+		color: var(--destructive);
+		font-size: var(--text-sm);
+	}
+	.action-error > :global(svg) {
+		flex: none;
+		margin-top: 0.125rem;
+	}
+	.action-error p {
+		flex: 1;
+		color: var(--text-primary);
+	}
+	.dismiss {
+		flex: none;
+		width: 1.5rem;
+		height: 1.5rem;
+		margin: -0.125rem -0.25rem 0 0;
+		border: 0;
+		border-radius: var(--radius-md);
+		background: transparent;
+		color: var(--text-secondary);
+		font: inherit;
+		font-size: var(--text-base);
+		cursor: pointer;
+	}
+	.dismiss:hover {
+		color: var(--text-primary);
+	}
+	@media (pointer: coarse) {
+		.dismiss {
+			width: var(--touch);
+			height: var(--touch);
+			margin: calc(-1 * var(--space-3)) calc(-1 * var(--space-3)) 0 0;
+		}
 	}
 	.skeletons {
 		display: grid;

@@ -11,6 +11,7 @@ mod auth;
 mod client;
 mod error;
 mod events;
+pub mod jobs;
 #[cfg(test)]
 pub(crate) mod mock;
 pub mod pools;

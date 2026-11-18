@@ -74,6 +74,34 @@ export type TopicMessage =
 
 export type TopicHandler = (message: TopicMessage) => void;
 
+/** How far an action (a TrueNAS job) has got. Sent before the call's reply. */
+export interface JobProgress {
+	/** 0 to 100, or `null` while the NAS does not say. */
+	percent: number | null;
+	/** What the job is doing, in the NAS's words. */
+	description: string | null;
+}
+
+export interface CallOptions {
+	/** Milliseconds, or `null` for none (actions: a job can take minutes). */
+	timeout?: number | null;
+	/** Gets the job's progress, for an action. */
+	onProgress?: (progress: JobProgress) => void;
+}
+
+/** The `progress` of a server message, or `null` if it is not one. */
+export function parseProgress(raw: unknown): JobProgress | null {
+	if (typeof raw !== 'object' || raw === null) return null;
+	const { percent, description } = raw as Record<string, unknown>;
+	return {
+		percent:
+			typeof percent === 'number' && Number.isFinite(percent)
+				? Math.min(100, Math.max(0, percent))
+				: null,
+		description: typeof description === 'string' && description !== '' ? description : null
+	};
+}
+
 /** True when the handler should query the topic's state again. */
 export function needsRefetch(message: TopicMessage): boolean {
 	return 'status' in message && message.status !== 'ended';
@@ -121,7 +149,8 @@ interface Pending {
 	params: unknown[];
 	resolve: (value: unknown) => void;
 	reject: (error: NasError) => void;
-	timer: ReturnType<typeof setTimeout>;
+	timer: ReturnType<typeof setTimeout> | undefined;
+	onProgress?: (progress: JobProgress) => void;
 	/** Written to a socket: may have run, so it is never sent again. */
 	sent: boolean;
 }
@@ -212,28 +241,33 @@ export class NasSocket {
 
 	/**
 	 * Calls an allowlisted TrueNAS method. Rejects with {@link NasError}. While truelite is out of
-	 * reach the call waits (until its timeout) and is sent once connected.
+	 * reach the call waits (until its timeout) and is sent once connected. An action gets its job's
+	 * progress through `onProgress`.
 	 */
 	call<T = unknown>(
 		method: string,
 		params: unknown[] = [],
-		{ timeout = CALL_TIMEOUT_MS }: { timeout?: number } = {}
+		{ timeout = CALL_TIMEOUT_MS, onProgress }: CallOptions = {}
 	): Promise<T> {
 		if (this.#status === 'logged-out' || this.#closed) {
 			return Promise.reject(loggedOut());
 		}
 		const id = this.#takeId();
 		return new Promise<T>((resolve, reject) => {
-			const timer = setTimeout(() => {
-				this.#pending.delete(id);
-				reject(new NasError({ code: 'timeout', message: 'The NAS did not answer in time.' }));
-			}, timeout);
+			const timer =
+				timeout === null
+					? undefined
+					: setTimeout(() => {
+							this.#pending.delete(id);
+							reject(new NasError({ code: 'timeout', message: 'The NAS did not answer in time.' }));
+						}, timeout);
 			const pending: Pending = {
 				method,
 				params,
 				resolve: resolve as (value: unknown) => void,
 				reject,
 				timer,
+				onProgress,
 				sent: false
 			};
 			this.#pending.set(id, pending);
@@ -373,6 +407,17 @@ export class NasSocket {
 		}
 		const pending = this.#pending.get(msg.id);
 		if (!pending) return; // timed out already
+		if ('progress' in msg && !('result' in msg) && !('error' in msg)) {
+			const progress = parseProgress(msg.progress);
+			if (progress) {
+				try {
+					pending.onProgress?.(progress);
+				} catch (e) {
+					console.error(`truelite: progress handler of ${pending.method} failed`, e);
+				}
+			}
+			return;
+		}
 		this.#pending.delete(msg.id);
 		clearTimeout(pending.timer);
 		if ('error' in msg) pending.reject(new NasError(errorBody(msg.error)));

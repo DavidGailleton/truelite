@@ -1,0 +1,21 @@
+{
+  "id": 53,
+  "message_ids": [7],
+  "method": "app.stop",
+  "arguments": ["plex"],
+  "transient": false,
+  "description": null,
+  "abortable": false,
+  "logs_path": null,
+  "logs_excerpt": null,
+  "progress": {"percent": 20, "description": "Stopping app", "extra": null},
+  "result": null,
+  "result_encoding_error": null,
+  "error": null,
+  "exception": null,
+  "exc_info": null,
+  "state": "RUNNING",
+  "time_started": {"$date": 1763460000000},
+  "time_finished": null,
+  "credentials": {"type": "LOGIN_PASSWORD", "data": {"username": "admin"}}
+}

@@ -13,6 +13,9 @@
 //! (`common/event_source/manager.py`, TS-25.10.8). [`log_topic`] checks the browser's arguments
 //! and builds the upstream name; [`compact_log_line`] trims each line. Schema:
 //! <https://api.truenas.com/v25.10/api_events_app.container_log_follow.html> (role `APPS_READ`).
+//!
+//! Actions (#33): `app.start`, `app.stop`, `app.redeploy` are jobs taking `[app_name]` (role
+//! `APPS_WRITE`); [`app_name_param`] checks and rebuilds their params.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -66,6 +69,15 @@ fn app_name_ok(name: &str) -> bool {
         && name.len() <= 40
         && !name.ends_with('-')
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// The params of the app actions (`app.start`, `app.stop`, `app.redeploy`: `[app_name]`),
+/// rebuilt from a checked name; `None` for anything else (another length, a bad name).
+pub fn app_name_param(params: &Value) -> Option<Value> {
+    match params.as_array()?.as_slice() {
+        [Value::String(name)] if app_name_ok(name) => Some(json!([name])),
+        _ => None,
+    }
 }
 
 /// Docker container ids: 64 lowercase hex digits, or the 12-digit short form.
@@ -232,5 +244,28 @@ mod tests {
         assert!(text.ends_with('…'));
         assert!(text.len() <= LOG_LINE_MAX + '…'.len_utf8());
         assert!(text.len() > LOG_LINE_MAX - 2);
+    }
+
+    #[test]
+    fn action_params_are_one_checked_app_name() {
+        assert_eq!(app_name_param(&json!(["plex"])), Some(json!(["plex"])));
+        assert_eq!(
+            app_name_param(&json!(["my-app2"])),
+            Some(json!(["my-app2"]))
+        );
+        for refused in [
+            json!([]),
+            json!(["Plex"]),
+            json!(["plex", "x"]),
+            json!([{"app_name": "plex"}]),
+            json!(["../x"]),
+            json!(["plex-"]),
+            json!(["2plex"]),
+            json!([""]),
+            json!("plex"),
+            json!([1]),
+        ] {
+            assert_eq!(app_name_param(&refused), None, "{refused}");
+        }
     }
 }

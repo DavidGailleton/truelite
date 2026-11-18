@@ -6,6 +6,8 @@
 
 use std::borrow::Cow;
 
+use serde_json::Value;
+
 /// Methods the web app may call, by exact name.
 const METHODS: &[&str] = &[
     // Shell: host name and version (READONLY_ADMIN).
@@ -48,12 +50,26 @@ const PARAM_EVENTS: &[(&str, ParamCheck)] = &[
     ),
 ];
 
+/// Checks the browser's params of an action and rebuilds them; `None` refuses them.
+pub type JobCheck = fn(&Value) -> Option<Value>;
+
+/// Actions: TrueNAS job methods, each with the check that rebuilds its params. The bridge
+/// follows their job and sends its progress (`truenas::jobs`). Every one has a confirmation
+/// dialog in the web app.
+const JOB_METHODS: &[(&str, JobCheck)] = &[
+    // App detail: Start, Stop, Restart (APPS_WRITE). Params `[app_name]`.
+    ("app.start", crate::truenas::apps::app_name_param),
+    ("app.stop", crate::truenas::apps::app_name_param),
+    ("app.redeploy", crate::truenas::apps::app_name_param),
+];
+
 /// Exact-name lists of the methods and events the bridge forwards. No prefixes, no wildcards.
 #[derive(Debug, Clone, Copy)]
 pub struct Allowlist {
     methods: &'static [&'static str],
     events: &'static [&'static str],
     param_events: &'static [(&'static str, ParamCheck)],
+    jobs: &'static [(&'static str, JobCheck)],
 }
 
 impl Allowlist {
@@ -64,12 +80,21 @@ impl Allowlist {
             methods,
             events,
             param_events: &[],
+            jobs: &[],
         }
     }
 
     /// Whether the browser may call `method`.
     pub fn method(&self, method: &str) -> bool {
         self.methods.contains(&method)
+    }
+
+    /// The params check of `method` when it is an allowed action (a job method).
+    pub fn job(&self, method: &str) -> Option<JobCheck> {
+        self.jobs
+            .iter()
+            .find(|(n, _)| *n == method)
+            .map(|(_, check)| *check)
     }
 
     /// The name to subscribe to on the NAS when the browser may follow `topic`: the topic
@@ -90,6 +115,7 @@ impl Default for Allowlist {
             methods: METHODS,
             events: EVENTS,
             param_events: PARAM_EVENTS,
+            jobs: JOB_METHODS,
         }
     }
 }
@@ -155,12 +181,25 @@ mod tests {
         assert!(Allowlist::new(&[], &[]).event(&topic).is_none());
     }
 
-    /// Phase 2 is read-only: no action may slip in before its phase and its dialog.
+    /// Actions live only in `JOB_METHODS`, behind a params check and a dialog: no action
+    /// slips into the plain lists.
     #[test]
-    fn no_action_is_listed_yet() {
+    fn actions_are_only_job_methods() {
         let writes = [
-            ".create", ".update", ".delete", ".do_", ".start", ".stop", ".restart", ".upgrade",
-            "reboot", "shutdown", ".set", "dismiss", "restore",
+            ".create",
+            ".update",
+            ".delete",
+            ".do_",
+            ".start",
+            ".stop",
+            ".restart",
+            ".upgrade",
+            ".redeploy",
+            "reboot",
+            "shutdown",
+            ".set",
+            "dismiss",
+            "restore",
         ];
         let params = PARAM_EVENTS.iter().map(|(n, _)| n);
         for name in METHODS.iter().chain(EVENTS).chain(params) {
@@ -169,11 +208,32 @@ mod tests {
                 "{name} looks like an action"
             );
         }
+        let a = Allowlist::default();
+        for job in ["app.start", "app.stop", "app.redeploy"] {
+            assert!(!a.method(job), "{job} must go through its check");
+            let check = a.job(job).unwrap();
+            assert_eq!(
+                check(&serde_json::json!(["plex"])),
+                Some(serde_json::json!(["plex"]))
+            );
+            assert_eq!(check(&serde_json::json!(["Plex"])), None);
+        }
+        for near in [
+            "app.upgrade",
+            "app.delete",
+            "app.start.",
+            "App.start",
+            "app",
+        ] {
+            assert!(a.job(near).is_none(), "{near:?}");
+        }
+        assert!(Allowlist::new(&[], &[]).job("app.start").is_none());
     }
 
     #[test]
     fn no_name_is_listed_twice() {
-        for list in [METHODS, EVENTS] {
+        let jobs: Vec<&str> = JOB_METHODS.iter().map(|(n, _)| *n).collect();
+        for list in [METHODS, EVENTS, &jobs] {
             let mut sorted = list.to_vec();
             sorted.sort_unstable();
             sorted.dedup();

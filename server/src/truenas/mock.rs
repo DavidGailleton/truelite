@@ -45,6 +45,8 @@ pub enum Reply {
     /// Raw frames sent as-is; `{id}` is replaced by the call id.
     Raw(Vec<String>),
     Delay(Duration, Box<Reply>),
+    /// Each reply in turn (raw job events, then a delayed result).
+    Seq(Vec<Reply>),
     /// Never answer.
     Ignore,
     /// Drop the connection without a close frame.
@@ -325,6 +327,11 @@ fn answer(reply: Reply, id: Value, out: Out) {
                 answer(*inner, id, out);
             });
         }
+        Reply::Seq(replies) => {
+            for r in replies {
+                answer(r, id.clone(), out.clone());
+            }
+        }
         Reply::Ignore => {}
         Reply::Drop => {
             let _ = out.send(None);
@@ -431,6 +438,26 @@ pub fn fake_nas() -> (
             "app.query" => Reply::Result(json!([{"id": "jellyfin", "state": "RUNNING",
                 "active_workloads": {"container_details": [{"id": "c1", "state": "running"}]},
                 "metadata": {"description": "Media server"}}])),
+            // Actions are jobs: an unrelated job, this call's job at 50 %, then the reply 100 ms later.
+            "app.start" | "app.stop" | "app.redeploy" if *p == "locked" => Reply::Error(
+                json!({"code": -32001, "message": "Method call error", "data": {
+                "error": 13, "errname": "EACCES", "reason": "Not authorized"}}),
+            ),
+            "app.start" | "app.stop" | "app.redeploy" => {
+                let job = |id: u32, ids: &str, percent: u32| {
+                    format!(
+                        r#"{{"jsonrpc":"2.0","method":"collection_update","params":{{"msg":"added","collection":"core.get_jobs","id":{id},"fields":{{"id":{id},"message_ids":[{ids}],"method":"{method}","state":"RUNNING","progress":{{"percent":{percent},"description":"Working on {app}","extra":null}}}}}}}}"#,
+                        app = p.as_str().unwrap_or_default()
+                    )
+                };
+                Reply::Seq(vec![
+                    Reply::Raw(vec![job(52, "999999", 10), job(53, "{id}", 50)]),
+                    Reply::Delay(
+                        Duration::from_millis(100),
+                        Box::new(Reply::Result(Value::Null)),
+                    ),
+                ])
+            }
             "fast" => Reply::Result(json!("fast")),
             "slow" => Reply::Delay(
                 Duration::from_millis(300),

@@ -45,6 +45,28 @@ Error `code`s, with `message` always in plain words:
 
 A call is never sent twice: after a `timeout` or `reconnecting` it may or may not have run.
 
+## Actions (jobs)
+
+Actions are TrueNAS jobs (`JOB_METHODS` in `server/src/allowlist.rs`): today `app.start`,
+`app.stop` and `app.redeploy` (restart), each taking `[app_name]` and needing the `APPS_WRITE`
+role. The server checks their params strictly and rebuilds them (bad ones get `bad_request`),
+follows the job on the NAS and sends its progress under the call's `id` until the reply:
+
+```json
+→ {"op": "call", "id": 7, "method": "app.stop", "params": ["plex"]}
+← {"id": 7, "progress": {"percent": 40, "description": "Stopping containers"}}
+← {"id": 7, "result": null}
+```
+
+- `percent` is 0 to 100 or `null`; `description` is the NAS's text (at most 200 characters)
+  or `null`. Progress comes only when it changes, at most every 250 ms, and may be skipped:
+  show the latest one.
+- There is no timeout: a job may take minutes (pulling images). The reply comes when the job
+  ends: `result`, or `error` with code `nas` when the job failed or the role is missing
+  (`errname` `EACCES`).
+- The job goes on on the NAS when the page or the socket closes, and after `reconnecting`: its
+  outcome then shows in the `app.query` events.
+
 ## Subscriptions
 
 ```json

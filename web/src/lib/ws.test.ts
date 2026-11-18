@@ -196,6 +196,26 @@ describe('calls', () => {
 		await expect(p).resolves.toBe('ok');
 	});
 
+	it('of actions get their progress, then the reply, with no timeout', async () => {
+		const { socket } = connect();
+		last().up();
+		const seen: unknown[] = [];
+		const p = socket.call('app.stop', ['plex'], {
+			timeout: null,
+			onProgress: (progress) => seen.push(progress)
+		});
+		const [c] = last().ops('call');
+		last().serverSend({ id: c.id, progress: { percent: 40, description: 'Stopping' } });
+		last().serverSend({ id: c.id, progress: { percent: 140, description: '' } });
+		await vi.advanceTimersByTimeAsync(CALL_TIMEOUT_MS * 10);
+		last().serverSend({ id: c.id, result: null });
+		await expect(p).resolves.toBeNull();
+		expect(seen).toEqual([
+			{ percent: 40, description: 'Stopping' },
+			{ percent: 100, description: null }
+		]);
+	});
+
 	it('made while offline wait for the next socket', async () => {
 		const { socket } = connect();
 		last().up();

@@ -156,6 +156,13 @@ enum Reply {
     Err { id: Option<u32>, error: WireError },
 }
 
+/// How far an action's job has got, before its reply.
+#[derive(Serialize)]
+struct JobUpdate<'a> {
+    id: u32,
+    progress: &'a truenas::jobs::JobProgress,
+}
+
 /// A change in a subscribed collection.
 #[derive(Serialize)]
 struct TopicData<'a> {
@@ -385,19 +392,38 @@ impl Bridge {
                 WireError::new("bad_request", "params must be a list"),
             ));
         }
-        if !self.allow.method(&method) {
-            tracing::warn!(%method, "refused: method not allowed");
-            return Some(reply_err(
-                Some(id),
-                WireError::new("not_allowed", "truelite does not allow this action"),
-            ));
-        }
+        let job = self.allow.job(&method);
+        let params = match job {
+            Some(check) => match check(&params) {
+                Some(params) => params,
+                None => {
+                    tracing::warn!(%method, "refused: bad action params");
+                    return Some(reply_err(
+                        Some(id),
+                        WireError::new("bad_request", "bad params for this action"),
+                    ));
+                }
+            },
+            None if self.allow.method(&method) => params,
+            None => {
+                tracing::warn!(%method, "refused: method not allowed");
+                return Some(reply_err(
+                    Some(id),
+                    WireError::new("not_allowed", "truelite does not allow this action"),
+                ));
+            }
+        };
         while self.calls.try_join_next().is_some() {}
         if self.calls.len() >= MAX_CALLS {
             return Some(reply_err(Some(id), WireError::busy()));
         }
         let session = self.session.clone();
         let out = self.out_tx.clone();
+        if job.is_some() {
+            self.calls
+                .spawn(run_job(session, id, method, params, out).in_current_span());
+            return None;
+        }
         self.calls.spawn(
             async move {
                 // Params are never logged: later phases send passwords and keys in them.
@@ -453,6 +479,36 @@ impl Bridge {
         self.topics.insert(topic, task);
         None
     }
+}
+
+/// Runs the action `method` (a job) and sends its progress, then its reply. The job goes on on
+/// the NAS if the socket closes first.
+async fn run_job(
+    session: truenas::Session,
+    id: u32,
+    method: String,
+    params: Value,
+    out: mpsc::Sender<String>,
+) {
+    tracing::info!(%method, "action");
+    let progress = |progress: truenas::jobs::JobProgress| {
+        // Progress is best effort: a full queue drops it, the next one catches up.
+        let _ = out.try_send(encode(&JobUpdate {
+            id,
+            progress: &progress,
+        }));
+    };
+    let reply = match truenas::jobs::run(&session, &method, params, progress).await {
+        Ok(result) => Reply::Ok { id, result },
+        Err(e) => {
+            tracing::info!(%method, error = %e, "action failed");
+            Reply::Err {
+                id: Some(id),
+                error: WireError::from_nas(&e),
+            }
+        }
+    };
+    let _ = out.send(encode(&reply)).await;
 }
 
 /// Subscribes to `upstream` (the NAS name of the browser's `topic`) and forwards its events
@@ -931,6 +987,58 @@ mod tests {
 
     /// #32: a log topic goes upstream under the name truelite rebuilds, comes back under the
     /// browser's own string, in batches of trimmed lines, in order; the end of the stream ends it.
+    #[tokio::test]
+    async fn an_action_sends_its_job_progress_then_its_reply() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        send(
+            &mut ws,
+            json!({"op": "call", "id": 9, "method": "app.stop", "params": ["plex"]}),
+        )
+        .await;
+        // The other job (10 %) is not this call's: only ours comes through.
+        assert_eq!(
+            next(&mut ws).await,
+            json!({"id": 9, "progress": {"percent": 50, "description": "Working on plex"}})
+        );
+        assert_eq!(next(&mut ws).await, json!({"id": 9, "result": null}));
+        let methods = h.methods();
+        let sub = methods.iter().position(|m| m == "core.subscribe").unwrap();
+        let stop = methods.iter().position(|m| m == "app.stop").unwrap();
+        assert!(sub < stop, "{methods:?}");
+        assert!(
+            h.mock
+                .requests()
+                .iter()
+                .any(|c| c.method == "core.subscribe" && c.params == json!(["core.get_jobs"]))
+        );
+    }
+
+    #[tokio::test]
+    async fn action_params_are_checked_and_nas_refusals_keep_their_name() {
+        async fn call(ws: &mut Client, id: u32, method: &str, params: Value) -> Value {
+            send(
+                ws,
+                json!({"op": "call", "id": id, "method": method, "params": params}),
+            )
+            .await;
+            next(ws).await
+        }
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        for (id, params) in [(1, json!(["Plex"])), (2, json!([])), (3, json!(["a", "b"]))] {
+            let got = call(&mut ws, id, "app.start", params).await;
+            assert_eq!(got["error"]["code"], "bad_request", "{got}");
+        }
+        let got = call(&mut ws, 4, "app.upgrade", json!(["plex"])).await;
+        assert_eq!(got["error"]["code"], "not_allowed");
+        assert!(!h.methods().iter().any(|m| m.starts_with("app.")));
+
+        let got = call(&mut ws, 5, "app.redeploy", json!(["locked"])).await;
+        assert_eq!(got["error"]["code"], "nas");
+        assert_eq!(got["error"]["errname"], "EACCES");
+    }
+
     #[tokio::test]
     async fn container_logs_arrive_in_batches_under_the_browsers_topic() {
         let h = Harness::new().await;

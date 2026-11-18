@@ -58,7 +58,7 @@ List, inspect, follow logs, then start/stop/restart/upgrade apps with confirmati
 - [x] #30 Apps list with state
 - [x] #31 App detail: containers, ports, image
 - [x] #32 Follow app logs
-- [ ] #33 Start, stop and restart apps with job progress
+- [x] #33 Start, stop and restart apps with job progress
 - [ ] #34 Upgrade apps with job progress
 
 ## Phase 5 — Storage
