@@ -2,6 +2,25 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.15.0 — 2026-11-18
+
+### Features
+
+- Start, stop and restart apps with job progress
+- Upgrade apps with job progress
+- **web:** Start, stop, restart and update apps from the apps list
+
+### Fixes
+
+- **web:** Keep action progress until the app settles
+- **web:** Show action progress as text, without a bar
+- **web:** Hide app links unless running, show restart for at least 2 s
+- **web:** Align app list pills and hover the whole row
+- **server:** Keep log tails and events from being lost
+- **server:** Find an action's job when its first event was missed
+- **web:** Never send an action long after it was confirmed
+- **web:** App actions match what the user saw and end at the right time
+
 ## v0.14.0 — 2026-11-18
 
 ### Features
