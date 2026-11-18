@@ -107,19 +107,19 @@ function sentence(message: string): string {
 	return /[.!?]$/.test(text) ? text : `${text}.`;
 }
 
+const BASE = 'http://truelite.invalid';
+
 /**
- * Where to go after logging in: `raw` when it is a path on this site, else the dashboard. Refuses
- * `//host` and `/\host` (other sites for the browser) and the login page itself.
+ * Where to go after logging in: `raw` when it is a path on this site, else the dashboard. The
+ * origin check refuses `//host` and `/\host` (other sites for the browser); the login page itself
+ * is refused too.
  */
 export function safeNext(raw: string | null | undefined): string {
-	if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return '/';
-	let path: string;
+	if (!raw?.startsWith('/')) return '/';
 	try {
-		const url = new URL(raw, 'http://truelite.invalid');
-		if (url.origin !== 'http://truelite.invalid') return '/';
-		path = url.pathname;
-		if (path === '/login' || path.startsWith('/login/')) return '/';
-		return path + url.search + url.hash;
+		const url = new URL(raw, BASE);
+		if (url.origin !== BASE || /^\/login(\/|$)/.test(url.pathname)) return '/';
+		return url.pathname + url.search + url.hash;
 	} catch {
 		return '/';
 	}

@@ -278,16 +278,16 @@
 		border: 1px solid color-mix(in srgb, var(--destructive) 40%, transparent);
 		background: var(--destructive-tint);
 	}
-	.alert :global(svg) {
+	.alert :global(svg),
+	.notice :global(svg) {
 		margin-top: 0.125rem;
+	}
+	.alert :global(svg) {
 		color: var(--destructive);
 	}
 	.notice {
 		background: var(--container-inset);
 		color: var(--text-secondary);
-	}
-	.notice :global(svg) {
-		margin-top: 0.125rem;
 	}
 
 	.primary {

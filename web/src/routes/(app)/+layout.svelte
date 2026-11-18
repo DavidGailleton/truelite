@@ -3,8 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import AppShell from '#lib/components/AppShell.svelte';
-	import { closeNas, connection } from '#lib/nas.svelte.js';
-	import { clearSession, loadSession, session } from '#lib/session.svelte.js';
+	import { connection } from '#lib/nas.svelte.js';
+	import { endSession, loadSession, session } from '#lib/session.svelte.js';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
@@ -14,8 +14,7 @@
 	$effect(() => {
 		if (connection.status !== 'logged-out') return;
 		const next = encodeURIComponent(page.url.pathname + page.url.search + page.url.hash);
-		closeNas();
-		clearSession();
+		endSession();
 		goto(`/login?ended=1&next=${next}`, { replaceState: true });
 	});
 

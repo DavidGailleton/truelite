@@ -47,8 +47,12 @@ export function setSession(user: SessionInfo): void {
 	loading = Promise.resolve('in');
 }
 
-/** Forgets the session locally (it ended on the server); the next {@link loadSession} asks again. */
-export function clearSession(): void {
+/**
+ * Ends the session locally: stops the WebSocket and forgets the user; the next
+ * {@link loadSession} asks again. Used once the session ended on the server.
+ */
+export function endSession(): void {
+	closeNas();
 	session.user = null;
 	loading = null;
 }
@@ -63,6 +67,5 @@ export async function logout(): Promise<void> {
 	} catch {
 		// Unreachable server: the cookie expires on its own and the session ends server-side.
 	}
-	closeNas();
-	clearSession();
+	endSession();
 }
