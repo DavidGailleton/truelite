@@ -1,8 +1,8 @@
 // Svelte binding of `system.info`: one call per connection, shared by the dashboard header and
 // the System card. No event exists for it, so uptime ticks in the browser between calls.
-import { nas, pageVisible } from './nas.svelte';
+import { nas, onNasClose, pageVisible } from './nas.svelte';
 import { SYSTEM_INFO, parseSystemInfo, refetchOnUp, type SystemInfo } from './system';
-import { NasError, type ErrorBody } from './ws';
+import { shownError, type ErrorBody } from './ws';
 
 /** Clock tick for the uptime; minute precision is all it shows. */
 const TICK_MS = 30_000;
@@ -16,6 +16,12 @@ export const system = $state<{
 /** `performance.now()` when `info` arrived, and the latest tick. */
 const clock = $state({ received: 0, now: 0 });
 let request = 0;
+
+onNasClose(() => {
+	request++;
+	system.info = null;
+	system.error = null;
+});
 
 /** Asks the NAS again. Errors from a dropped link are not kept: the next `up` refetches. */
 export function loadSystemInfo(): void {
@@ -38,11 +44,8 @@ export function loadSystemInfo(): void {
 		})
 		.catch((e: unknown) => {
 			if (mine !== request) return;
-			if (!(e instanceof NasError)) {
-				system.error = { code: 'bad_request', message: 'Something went wrong.' };
-			} else if (!['disconnected', 'reconnecting', 'logged_out'].includes(e.code)) {
-				system.error = { code: e.code, message: e.message, errname: e.errname };
-			}
+			const error = shownError(e);
+			if (error) system.error = error;
 		});
 }
 

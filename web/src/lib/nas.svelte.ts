@@ -15,11 +15,22 @@ export function nas(): NasSocket {
 	return socket;
 }
 
+const resets: (() => void)[] = [];
+
+/**
+ * Registers a reset run by {@link closeNas}, so data of the account that logged out is never
+ * shown to the next one. Stores call it once, at module load.
+ */
+export function onNasClose(reset: () => void): void {
+	resets.push(reset);
+}
+
 /** Stops the connection after a logout; the next {@link nas} call opens a fresh one. */
 export function closeNas(): void {
 	socket?.close();
 	socket = undefined;
 	connection.status = 'connecting';
+	for (const reset of resets) reset();
 }
 
 /** Whether the page is on screen (not a background tab, not a locked phone). */
@@ -65,7 +76,9 @@ export function useTopic(
 	$effect(() => {
 		void attempt; // re-run on retry()
 		if (whenVisible && !page.visible) return;
-		return nas().subscribe(topic, handler);
+		// A wrapper of our own: handlers live in a Set, and two callers sharing one function would
+		// share one entry, so the first to unmount would unsubscribe the other.
+		return nas().subscribe(topic, (message) => handler(message));
 	});
 	return { retry: () => attempt++ };
 }

@@ -2,7 +2,7 @@
 // follows `pool.scan`, and usable space comes from the root datasets, read again when a pool
 // changes or the page comes back after a while. No timer polling.
 import { untrack } from 'svelte';
-import { nas, pageVisible, useTopic } from './nas.svelte';
+import { nas, onNasClose, pageVisible, useTopic } from './nas.svelte';
 import {
 	DATASET_QUERY,
 	POOL_QUERY,
@@ -12,8 +12,10 @@ import {
 	applyScan,
 	parsePools,
 	parseRootUsage,
+	poolRows,
 	rootUsageParams,
 	type Pool,
+	type PoolRow,
 	type RootUsage
 } from './pools';
 import { NasError, needsRefetch, shownError, type ErrorBody, type TopicMessage } from './ws';
@@ -38,6 +40,24 @@ let listRequest = 0;
 let usageRequest = 0;
 let usageAt = 0;
 let usageTimer: ReturnType<typeof setTimeout> | undefined;
+
+const rows = $derived(pools.list ? poolRows(pools.list, pools.usage, Date.now()) : null);
+
+/** The pools as the card shows them, worst first; `null` until the first answer. Reactive. */
+export function poolRowsNow(): PoolRow[] | null {
+	return rows;
+}
+
+onNasClose(() => {
+	listRequest++;
+	usageRequest++;
+	clearTimeout(usageTimer);
+	usageAt = 0;
+	pools.list = null;
+	pools.usage = new Map();
+	pools.error = null;
+	pools.usageDenied = false;
+});
 
 /** Queries the pool list, then their usable space. */
 export function loadPools(): void {
@@ -90,7 +110,8 @@ function loadUsageSoon(): void {
 
 function onPoolMessage(message: TopicMessage): void {
 	if ('data' in message) {
-		const next = pools.list && applyPoolEvent(pools.list, message.data);
+		// After a failed reload the list may lack events: read it again rather than patch it.
+		const next = !pools.error && pools.list && applyPoolEvent(pools.list, message.data);
 		if (!next) {
 			loadPools();
 			return;

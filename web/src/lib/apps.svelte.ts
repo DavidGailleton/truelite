@@ -1,7 +1,15 @@
 // Svelte binding of the apps summary: the list follows `app.query` events, and is queried again
 // on (re)subscription. No timer polling.
-import { nas, useTopic } from './nas.svelte';
-import { APP_QUERY, APP_SELECT, applyAppEvent, parseApps, type App } from './apps';
+import { nas, onNasClose, useTopic } from './nas.svelte';
+import {
+	APP_QUERY,
+	APP_SELECT,
+	applyAppEvent,
+	parseApps,
+	summarize,
+	type App,
+	type AppSummary
+} from './apps';
 import { needsRefetch, shownError, type ErrorBody, type TopicMessage } from './ws';
 
 export const apps = $state<{
@@ -12,6 +20,19 @@ export const apps = $state<{
 }>({ list: null, error: null });
 
 let request = 0;
+
+const summary = $derived(apps.list ? summarize(apps.list) : null);
+
+/** The apps counted by state, `null` until the first answer. Reactive. */
+export function appSummary(): AppSummary | null {
+	return summary;
+}
+
+onNasClose(() => {
+	request++;
+	apps.list = null;
+	apps.error = null;
+});
 
 /** Queries the app list. */
 export function loadApps(): void {
@@ -37,7 +58,8 @@ export function loadApps(): void {
 
 function onAppMessage(message: TopicMessage): void {
 	if ('data' in message) {
-		const next = apps.list && applyAppEvent(apps.list, message.data);
+		// After a failed reload the list may lack events: read it again rather than patch it.
+		const next = !apps.error && apps.list && applyAppEvent(apps.list, message.data);
 		if (next) apps.list = next;
 		else loadApps();
 	} else if (message.status === 'ended') {

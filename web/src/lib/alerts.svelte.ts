@@ -1,7 +1,14 @@
 // Svelte binding of the alerts: the list follows `alert.list` events, and is queried again on
 // (re)subscription. No timer polling.
-import { nas, useTopic } from './nas.svelte';
-import { ALERT_LIST, applyAlertEvent, parseAlerts, type Alert } from './alerts';
+import { nas, onNasClose, useTopic } from './nas.svelte';
+import {
+	ALERT_LIST,
+	applyAlertEvent,
+	parseAlerts,
+	summarizeAlerts,
+	type Alert,
+	type AlertSummary
+} from './alerts';
 import { needsRefetch, shownError, type ErrorBody, type TopicMessage } from './ws';
 
 export const alerts = $state<{
@@ -12,6 +19,19 @@ export const alerts = $state<{
 }>({ list: null, error: null });
 
 let request = 0;
+
+const summary = $derived(alerts.list ? summarizeAlerts(alerts.list) : null);
+
+/** The alerts sorted and counted, `null` until the first answer. Reactive. */
+export function alertSummary(): AlertSummary | null {
+	return summary;
+}
+
+onNasClose(() => {
+	request++;
+	alerts.list = null;
+	alerts.error = null;
+});
 
 /** Queries the alert list. */
 export function loadAlerts(): void {
@@ -37,7 +57,8 @@ export function loadAlerts(): void {
 
 function onAlertMessage(message: TopicMessage): void {
 	if ('data' in message) {
-		const next = alerts.list && applyAlertEvent(alerts.list, message.data);
+		// After a failed reload the list may lack events: read it again rather than patch it.
+		const next = !alerts.error && alerts.list && applyAlertEvent(alerts.list, message.data);
 		if (next) alerts.list = next;
 		else loadAlerts();
 	} else if (message.status === 'ended') {
