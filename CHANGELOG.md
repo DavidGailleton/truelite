@@ -2,6 +2,14 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.14.0 — 2026-11-18
+
+### Features
+
+- **web:** Apps list with state, version and filter
+- **web:** App detail with containers, ports and folders
+- Follow app container logs
+
 ## v0.13.0 — 2026-11-18
 
 ### Features
