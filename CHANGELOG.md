@@ -2,6 +2,12 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.6.0 — 2026-11-18
+
+### Features
+
+- **server:** WebSocket bridge with our protocol and method allowlist
+
 ## v0.5.0 — 2026-11-18
 
 ### Features
