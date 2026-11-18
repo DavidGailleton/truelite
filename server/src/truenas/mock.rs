@@ -1,8 +1,9 @@
 //! In-process mock of the TrueNAS JSON-RPC WebSocket server, scripted per test.
 //! Seed of #13: grows login, events and reconnect scenarios from here.
 
+use std::future::Future;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
 use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
@@ -40,15 +41,37 @@ pub enum Reply {
     Drop,
 }
 
-type Handler = Arc<dyn Fn(&str, &Value) -> Reply + Send + Sync>;
+/// Gets the connection number (1 for the first accepted socket), the method and the params.
+type Handler = Arc<dyn Fn(usize, &str, &Value) -> Reply + Send + Sync>;
 /// `None` drops the connection.
 type Out = mpsc::UnboundedSender<Option<String>>;
+
+/// One call received by the mock.
+#[derive(Debug, Clone)]
+pub struct Call {
+    pub conn: usize,
+    pub id: Value,
+    pub method: String,
+    pub params: Value,
+}
 
 #[derive(Default)]
 struct State {
     path: Option<String>,
-    calls: Vec<(Value, String)>,
+    calls: Vec<Call>,
     conn: Option<Out>,
+    conns: usize,
+    open: usize,
+    /// Refuse new sockets (the NAS is unreachable).
+    down: bool,
+    refused: Vec<Instant>,
+}
+
+/// Bounds a test step so a bug fails the test instead of hanging it.
+pub async fn within<F: Future>(f: F) -> F::Output {
+    tokio::time::timeout(Duration::from_secs(5), f)
+        .await
+        .expect("test step timed out")
 }
 
 pub struct Mock {
@@ -59,6 +82,13 @@ pub struct Mock {
 impl Mock {
     /// Plain `ws://127.0.0.1:port` mock.
     pub async fn start(handler: impl Fn(&str, &Value) -> Reply + Send + Sync + 'static) -> Mock {
+        Self::start_conn(move |_, m, p| handler(m, p)).await
+    }
+
+    /// Like [`start`](Self::start), the handler also gets the connection number.
+    pub async fn start_conn(
+        handler: impl Fn(usize, &str, &Value) -> Reply + Send + Sync + 'static,
+    ) -> Mock {
         Self::listen(Arc::new(handler), None).await
     }
 
@@ -68,7 +98,7 @@ impl Mock {
     pub async fn start_tls(
         handler: impl Fn(&str, &Value) -> Reply + Send + Sync + 'static,
     ) -> (Mock, Fingerprint) {
-        Self::start_tls_inner(Arc::new(handler), false).await
+        Self::start_tls_inner(Arc::new(move |_, m: &str, p: &Value| handler(m, p)), false).await
     }
 
     /// Like [`start_tls`](Self::start_tls), but signs the handshake with another key than the
@@ -76,7 +106,7 @@ impl Mock {
     pub async fn start_tls_impostor(
         handler: impl Fn(&str, &Value) -> Reply + Send + Sync + 'static,
     ) -> (Mock, Fingerprint) {
-        Self::start_tls_inner(Arc::new(handler), true).await
+        Self::start_tls_inner(Arc::new(move |_, m: &str, p: &Value| handler(m, p)), true).await
     }
 
     async fn start_tls_inner(handler: Handler, wrong_key: bool) -> (Mock, Fingerprint) {
@@ -121,6 +151,13 @@ impl Mock {
         let st = state.clone();
         tokio::spawn(async move {
             while let Ok((tcp, _)) = listener.accept().await {
+                {
+                    let mut s = st.lock().unwrap();
+                    if s.down {
+                        s.refused.push(Instant::now());
+                        continue;
+                    }
+                }
                 let (st, handler) = (st.clone(), handler.clone());
                 match tls.clone() {
                     None => {
@@ -147,7 +184,39 @@ impl Mock {
 
     /// `(id, method)` of every call received, in order.
     pub fn calls(&self) -> Vec<(Value, String)> {
+        self.requests()
+            .into_iter()
+            .map(|c| (c.id, c.method))
+            .collect()
+    }
+
+    /// Every call received, in order, with its connection and params.
+    pub fn requests(&self) -> Vec<Call> {
         self.state.lock().unwrap().calls.clone()
+    }
+
+    /// Drops the current connection without a close frame (middlewared restarting).
+    pub fn kill(&self) {
+        if let Some(out) = &self.state.lock().unwrap().conn {
+            let _ = out.send(None);
+        }
+    }
+
+    /// While down, new sockets are closed right after `accept` and their time recorded.
+    pub fn set_down(&self, down: bool) {
+        self.state.lock().unwrap().down = down;
+    }
+
+    /// When each refused socket arrived.
+    pub fn refused(&self) -> Vec<Instant> {
+        self.state.lock().unwrap().refused.clone()
+    }
+
+    /// Resolves once no connection is open.
+    pub async fn disconnected(&self) {
+        while self.state.lock().unwrap().open > 0 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
     }
 
     /// Sends a raw message (e.g. a notification) on the current connection.
@@ -175,9 +244,29 @@ where
     let Ok(ws) = tokio_tungstenite::accept_hdr_async(tcp, record_path).await else {
         return;
     };
-    let (mut sink, mut stream) = ws.split();
     let (out, mut out_rx) = mpsc::unbounded_channel::<Option<String>>();
-    state.lock().unwrap().conn = Some(out.clone());
+    let conn = {
+        let mut s = state.lock().unwrap();
+        s.conn = Some(out.clone());
+        s.conns += 1;
+        s.open += 1;
+        s.conns
+    };
+    serve_ws(ws, conn, &state, &handler, out, &mut out_rx).await;
+    state.lock().unwrap().open -= 1;
+}
+
+async fn serve_ws<S>(
+    ws: tokio_tungstenite::WebSocketStream<S>,
+    conn: usize,
+    state: &Mutex<State>,
+    handler: &Handler,
+    out: Out,
+    out_rx: &mut mpsc::UnboundedReceiver<Option<String>>,
+) where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    let (mut sink, mut stream) = ws.split();
     loop {
         tokio::select! {
             msg = stream.next() => {
@@ -185,8 +274,14 @@ where
                 let req: Value = serde_json::from_str(t.as_str()).unwrap();
                 let id = req["id"].clone();
                 let method = req["method"].as_str().unwrap_or_default().to_owned();
-                state.lock().unwrap().calls.push((id.clone(), method.clone()));
-                answer(handler(&method, &req["params"]), id, out.clone());
+                let params = req["params"].clone();
+                state.lock().unwrap().calls.push(Call {
+                    conn,
+                    id: id.clone(),
+                    method: method.clone(),
+                    params: params.clone(),
+                });
+                answer(handler(conn, &method, &params), id, out.clone());
             }
             o = out_rx.recv() => match o {
                 Some(Some(text)) => {

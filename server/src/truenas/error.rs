@@ -23,6 +23,21 @@ pub enum Error {
     Protocol(String),
     /// The result did not match the expected type.
     Decode(serde_json::Error),
+    /// The NAS refused the login.
+    Auth(AuthFailure),
+    /// The session has ended (logout, or the NAS no longer accepts it): log in again.
+    LoggedOut,
+}
+
+/// Why `auth.login_ex` refused a login.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthFailure {
+    /// Unknown user or wrong password (`AUTH_ERR`), or too many wrong one-time codes.
+    BadCredentials,
+    /// The password or account has expired (`EXPIRED`).
+    Expired,
+    /// The login must be completed on another server (`REDIRECT`); not supported.
+    Redirect(Vec<String>),
 }
 
 impl fmt::Display for Error {
@@ -53,6 +68,16 @@ impl fmt::Display for Error {
             }
             Error::Protocol(e) => write!(f, "protocol error: {e}"),
             Error::Decode(e) => write!(f, "unexpected result from the NAS: {e}"),
+            Error::Auth(AuthFailure::BadCredentials) => f.write_str("wrong user name or password"),
+            Error::Auth(AuthFailure::Expired) => {
+                f.write_str("this password or account has expired; change it on the NAS")
+            }
+            Error::Auth(AuthFailure::Redirect(urls)) => write!(
+                f,
+                "this NAS asks to log in on another server ({}), which truelite does not support",
+                urls.join(", ")
+            ),
+            Error::LoggedOut => f.write_str("logged out of the NAS; log in again"),
         }
     }
 }

@@ -49,8 +49,15 @@ impl Default for Options {
 }
 
 enum Command {
-    Call { id: u64, text: String, reply: Reply },
+    Call {
+        id: u64,
+        text: String,
+        reply: Reply,
+    },
     Cancel(u64),
+    /// Drop the socket as if the NAS went away (tests).
+    #[cfg(test)]
+    Kill,
 }
 
 /// Handle to one upstream connection. Cheap to clone; the socket closes when every handle is
@@ -149,7 +156,7 @@ impl Client {
     ) -> Result<
         (
             u64,
-            impl Future<Output = Result<Value, Error>> + Send + 'static,
+            impl Future<Output = Result<Value, Error>> + Send + use<>,
         ),
         Error,
     > {
@@ -190,6 +197,12 @@ impl Client {
 
     pub fn is_closed(&self) -> bool {
         *self.inner.closed.borrow()
+    }
+
+    /// Drops the socket without a close frame, as if the NAS went away.
+    #[cfg(test)]
+    pub(super) async fn kill(&self) {
+        let _ = self.inner.tx.send(Command::Kill).await;
     }
 
     /// Resolves once the connection is gone (the reconnect logic waits on this).
@@ -276,6 +289,8 @@ async fn run<S>(
                 Some(Command::Cancel(id)) => {
                     pending.remove(&id);
                 }
+                #[cfg(test)]
+                Some(Command::Kill) => break,
                 None => {
                     let _ = sink.close().await;
                     break;
@@ -336,7 +351,7 @@ fn handle(text: &str, pending: &mut HashMap<u64, Reply>, notifs: &mpsc::Sender<N
 
 #[cfg(test)]
 mod tests {
-    use super::super::mock::{Mock, Reply as R};
+    use super::super::mock::{Mock, Reply as R, within};
     use super::super::{Fingerprint, client_config};
     use super::*;
     use serde_json::json;
@@ -346,12 +361,6 @@ mod tests {
             call_timeout: Duration::from_millis(call_timeout_ms),
             ..Options::default()
         }
-    }
-
-    async fn within<F: Future>(f: F) -> F::Output {
-        tokio::time::timeout(Duration::from_secs(5), f)
-            .await
-            .expect("test step timed out")
     }
 
     fn standard(method: &str, _params: &Value) -> R {
