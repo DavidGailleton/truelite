@@ -34,6 +34,12 @@ function trackVisibility(): void {
 	document.addEventListener('visibilitychange', update);
 }
 
+/** Whether the page is on screen; reactive. */
+export function pageVisible(): boolean {
+	trackVisibility();
+	return page.visible;
+}
+
 export interface TopicOptions {
 	/**
 	 * Unsubscribe while the page is hidden and subscribe again when it comes back (the handler

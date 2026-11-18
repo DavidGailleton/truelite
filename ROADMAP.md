@@ -43,7 +43,7 @@ shell page and survive an upstream reconnect.
 One screen with what needs attention first: alerts, pool health, live CPU/RAM/net, apps summary.
 Done when the dashboard works on a phone at 360 px with live data and no polling.
 
-- [ ] #23 System info card
+- [x] #23 System info card
 - [x] #24 Live CPU, RAM and network with SVG sparklines
 - [ ] #25 Pool health and usage bars
 - [ ] #26 Apps summary card
