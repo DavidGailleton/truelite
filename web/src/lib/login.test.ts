@@ -62,6 +62,13 @@ describe('loginWithPassword', () => {
 			error: 'Login failed (error 500).'
 		});
 	});
+
+	it('reports an unknown 200 answer as unexpected, not unreachable', async () => {
+		expect(await loginWithPassword('a', 'b', reply(200, {}))).toEqual({
+			kind: 'error',
+			error: 'Unexpected answer from truelite. Try again.'
+		});
+	});
 });
 
 describe('loginWithCode', () => {

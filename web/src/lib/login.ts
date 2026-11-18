@@ -18,6 +18,7 @@ export type LoginResult =
 type Fetch = typeof fetch;
 
 const UNREACHABLE = 'Can’t reach truelite. Check your connection.';
+const UNEXPECTED = 'Unexpected answer from truelite. Try again.';
 
 /** Logs in with a user name and password. */
 export function loginWithPassword(
@@ -73,7 +74,7 @@ async function post(
 	if (res.ok) {
 		if (data.otp_required === true) return { kind: 'otp' };
 		if (typeof data.username === 'string') return { kind: 'done', user: data as unknown as SessionInfo };
-		return { kind: 'error', error: UNREACHABLE };
+		return { kind: 'error', error: UNEXPECTED };
 	}
 
 	if (res.status === 429) return { kind: 'error', error: tooMany(res.headers.get('Retry-After')) };
