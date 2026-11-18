@@ -14,7 +14,10 @@ function reply(status: number, body: unknown, headers: Record<string, string> = 
 describe('loginWithPassword', () => {
 	it('sends JSON and returns the user', async () => {
 		const fetchFn = reply(200, USER);
-		expect(await loginWithPassword('admin', 'secret', fetchFn)).toEqual({ kind: 'done', user: USER });
+		expect(await loginWithPassword('admin', 'secret', fetchFn)).toEqual({
+			kind: 'done',
+			user: USER
+		});
 		const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
 		expect(url).toBe('/api/login');
 		expect(init.method).toBe('POST');
@@ -29,7 +32,11 @@ describe('loginWithPassword', () => {
 	});
 
 	it('turns server errors into sentences', async () => {
-		const r = await loginWithPassword('a', 'b', reply(401, { error: 'wrong user name or password' }));
+		const r = await loginWithPassword(
+			'a',
+			'b',
+			reply(401, { error: 'wrong user name or password' })
+		);
 		expect(r).toEqual({ kind: 'error', error: 'Wrong user name or password.' });
 		const r2 = await loginWithPassword('a', 'b', reply(502, { error: 'cannot reach the NAS' }));
 		expect(r2).toEqual({ kind: 'error', error: 'Cannot reach the NAS.' });
@@ -81,7 +88,10 @@ describe('loginWithCode', () => {
 	});
 
 	it('stays on the code step after a wrong code', async () => {
-		const r = await loginWithCode('000000', reply(401, { error: 'wrong code', otp_required: true }));
+		const r = await loginWithCode(
+			'000000',
+			reply(401, { error: 'wrong code', otp_required: true })
+		);
 		expect(r).toEqual({ kind: 'otp', error: 'Wrong code. Try again.' });
 	});
 

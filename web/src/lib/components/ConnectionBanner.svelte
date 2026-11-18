@@ -25,9 +25,7 @@
 		<div class="banner">
 			<span class="spin"><Icon name="refresh-cw" /></span>
 			<span>
-				{shown === 'nas-reconnecting'
-					? 'Reconnecting to NAS…'
-					: 'Can’t reach truelite. Retrying…'}
+				{shown === 'nas-reconnecting' ? 'Reconnecting to NAS…' : 'Can’t reach truelite. Retrying…'}
 			</span>
 		</div>
 	{/if}

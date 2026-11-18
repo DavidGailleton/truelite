@@ -155,7 +155,11 @@ describe('calls', () => {
 		last().up();
 		socket.call('a').catch(() => {});
 		socket.call('b').catch(() => {});
-		expect(last().ops('call').map((c) => c.id)).toEqual([2 ** 32 - 1, 0]);
+		expect(
+			last()
+				.ops('call')
+				.map((c) => c.id)
+		).toEqual([2 ** 32 - 1, 0]);
 	});
 
 	it('time out on their own and ignore a late reply', async () => {
@@ -282,7 +286,9 @@ describe('session end', () => {
 
 		expect(statuses.at(-1)).toBe('logged-out');
 		expect(await pending).toMatchObject({ code: 'disconnected' });
-		expect(got).toEqual([{ status: 'ended', error: expect.objectContaining({ code: 'logged_out' }) }]);
+		expect(got).toEqual([
+			{ status: 'ended', error: expect.objectContaining({ code: 'logged_out' }) }
+		]);
 		await expect(socket.call('x')).rejects.toMatchObject({ code: 'logged_out' });
 		await vi.advanceTimersByTimeAsync(60_000);
 		expect(FakeSocket.all).toHaveLength(1);

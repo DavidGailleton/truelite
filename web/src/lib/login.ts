@@ -73,7 +73,8 @@ async function post(
 
 	if (res.ok) {
 		if (data.otp_required === true) return { kind: 'otp' };
-		if (typeof data.username === 'string') return { kind: 'done', user: data as unknown as SessionInfo };
+		if (typeof data.username === 'string')
+			return { kind: 'done', user: data as unknown as SessionInfo };
 		return { kind: 'error', error: UNEXPECTED };
 	}
 

@@ -4,4 +4,8 @@
 </script>
 
 <PageHeader title="Apps" subtitle="Your installed apps" />
-<EmptyState icon="box" title="Not here yet" text="Listing and managing apps comes in a later version of truelite." />
+<EmptyState
+	icon="box"
+	title="Not here yet"
+	text="Listing and managing apps comes in a later version of truelite."
+/>

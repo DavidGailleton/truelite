@@ -4,4 +4,8 @@
 </script>
 
 <PageHeader title="System" subtitle="Updates and power" />
-<EmptyState icon="server" title="Not here yet" text="Updates, reboot and shutdown come in a later version of truelite." />
+<EmptyState
+	icon="server"
+	title="Not here yet"
+	text="Updates, reboot and shutdown come in a later version of truelite."
+/>

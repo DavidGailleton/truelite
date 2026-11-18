@@ -263,8 +263,9 @@
 	main {
 		max-width: var(--content-max);
 		margin: 0 auto;
-		padding: max(var(--gutter), env(safe-area-inset-top)) max(var(--gutter), env(safe-area-inset-right))
-			var(--space-8) max(var(--gutter), env(safe-area-inset-left));
+		padding: max(var(--gutter), env(safe-area-inset-top))
+			max(var(--gutter), env(safe-area-inset-right)) var(--space-8)
+			max(var(--gutter), env(safe-area-inset-left));
 	}
 	main:focus {
 		outline: none;
