@@ -37,6 +37,7 @@ Checks (exactly what CI runs, `.github/workflows/ci.yml`):
 cd web && npm ci && npm run check && npm test && npm run build
 cd server && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 cargo test health_ok                           # single test by name (from server/)
+cargo test journey                             # end-to-end: login → /ws → NAS reconnect → logout
 ```
 
 Web unit tests use vitest (`src/**/*.test.ts`, `npm test`; `npx vitest run ws` for one file). Release image: `docker build .`

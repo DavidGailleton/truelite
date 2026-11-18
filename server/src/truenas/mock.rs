@@ -1,6 +1,12 @@
-//! In-process mock of the TrueNAS JSON-RPC WebSocket server, scripted per test.
-//! Seed of #13: grows login, events and reconnect scenarios from here. [`fake_nas`] is a
-//! scripted NAS shared by the session tests and the crate's HTTP tests.
+//! In-process mock of the TrueNAS JSON-RPC WebSocket server, scripted per test (#13).
+//!
+//! [`Mock`] serves `ws://` or `wss://` (self-signed, or an impostor without the certificate's
+//! key) and answers each call with a [`Reply`]: a result, an error, raw frames, a delay, no
+//! answer or a dropped connection. Tests can push notifications, kill the connection, keep the
+//! NAS down, and read back every call it received.
+//!
+//! [`fake_nas`] is a scripted NAS (passwords, one-time codes, tokens, subscriptions) used by
+//! the session, login and bridge tests, and end to end by `journey_tests`.
 
 use std::collections::HashSet;
 use std::future::Future;

@@ -2,6 +2,8 @@
 
 mod allowlist;
 mod config;
+#[cfg(test)]
+mod journey_tests;
 mod login;
 mod origin;
 mod rate_limit;
