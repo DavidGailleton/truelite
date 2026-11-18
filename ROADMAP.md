@@ -102,4 +102,5 @@ Runs as a TrueNAS custom app from the public GHCR image, documented; release v1.
 - [ ] #52 Optional subdomain through the VPS proxy over Tailscale
 - [ ] #53 README deploy guide and screenshots
 - [ ] #54 Release v1.0.0
+- [x] #56 Session cookie works over plain HTTP
 

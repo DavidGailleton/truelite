@@ -1,4 +1,5 @@
-# Example for a TrueNAS "Custom App" (Apps > Discover > Install via YAML).
+# Example for a TrueNAS "Custom App" (Apps > Discover > Install via YAML; app name: `truelite`).
+# Then open http://<any NAS address>:8090 (LAN or Tailscale; plain HTTP is fine).
 services:
   truelite:
     image: ghcr.io/davidgailleton/truelite:latest
@@ -7,7 +8,8 @@ services:
       - "8090:8080"
     environment:
       TRUELITE_LISTEN: "0.0.0.0:8080"
-      # See .env.example for how to get the fingerprint.
-      # TRUELITE_NAS_URL: "wss://truenas.local"
+      # The NAS web UI address (check its port: it may be 443 or e.g. 4433) and the SHA-256 of
+      # its certificate. See .env.example for how to get the fingerprint.
+      # TRUELITE_NAS_URL: "wss://192.168.1.10:443"
       # TRUELITE_NAS_FINGERPRINT: "AB:CD:..."
       RUST_LOG: "info"

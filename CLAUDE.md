@@ -73,7 +73,8 @@ Planned (phases 2+), keep new code consistent with it:
   `{id, op:"call", method, params}` → `{id, result|error}`; `{op:"sub", topic}` → `{topic, data}`.
   The server forwards **only allowlisted methods**; the allowlist grows per phase (reads first,
   then actions). Calls run as the logged-in TrueNAS user, so TrueNAS roles apply.
-- Sessions: random id in an HttpOnly, Secure, SameSite=Strict cookie; one upstream WS per session;
+- Sessions: random id in an HttpOnly, SameSite=Strict cookie (not Secure: truelite runs over
+  plain HTTP on the LAN/Tailscale, any address); one upstream WS per session;
   Origin check on WS upgrade, login rate limit, CSP headers. NAS TLS: pin the cert fingerprint,
   never "accept invalid certs". `midclt` over SSH was rejected; don't propose it.
 - Check every TrueNAS method/event name against api.truenas.com (25.10) before using it.

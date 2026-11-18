@@ -31,7 +31,7 @@ use crate::sessions::{
 use crate::truenas::{self, AuthFailure, Endpoint, LoginStep, PendingOtp, Secret, SessionOptions};
 
 /// Cookie holding the ticket of a login waiting for its one-time code.
-pub const OTP_COOKIE: &str = "__Host-truelite-otp";
+pub const OTP_COOKIE: &str = "truelite-otp";
 /// How long a login may wait for its one-time code.
 const OTP_TTL: Duration = Duration::from_secs(120);
 /// Logins waiting for a code at once; each holds a socket to the NAS.

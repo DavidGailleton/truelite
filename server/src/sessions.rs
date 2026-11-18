@@ -1,7 +1,8 @@
 //! Browser sessions: a random id in a cookie maps to a logged-in [`truenas::Session`].
 //!
-//! The id is 32 random bytes, hex-encoded, sent only in an `HttpOnly`, `Secure`,
-//! `SameSite=Strict` cookie with the `__Host-` prefix. The store keys entries by the SHA-256 of
+//! The id is 32 random bytes, hex-encoded, sent only in an `HttpOnly`, `SameSite=Strict`,
+//! host-only cookie. It is not `Secure`: truelite is meant to be reached over plain HTTP on the
+//! LAN or Tailscale, where browsers drop `Secure` cookies. The store keys entries by the SHA-256 of
 //! the id, so it never holds the id itself and lookups never compare secrets.
 //!
 //! A session ends when it is idle (no request and no open WebSocket for [`StoreOptions::idle`]),
@@ -26,8 +27,8 @@ use tokio::task::{JoinHandle, JoinSet};
 
 use crate::truenas::{self, Link};
 
-/// Cookie name. `__Host-` makes browsers require `Secure`, `Path=/` and no `Domain`.
-pub const COOKIE: &str = "__Host-truelite";
+/// Cookie name. No `__Host-` prefix: it would make browsers require `Secure`.
+pub const COOKIE: &str = "truelite";
 /// How long a logout waits for the NAS to confirm.
 pub const LOGOUT_TIMEOUT: Duration = Duration::from_secs(5);
 const ID_BYTES: usize = 32;
@@ -387,10 +388,11 @@ impl Drop for WsGuard {
 }
 
 /// `Set-Cookie` value that stores `value` in the cookie `name` for `max_age` (zero deletes it).
-/// Every cookie truelite sets is host-only, HTTP-only, secure and same-site strict.
+/// Every cookie truelite sets is host-only, HTTP-only and same-site strict, and works over plain
+/// HTTP (no `Secure`).
 pub fn cookie(name: &str, value: &str, max_age: Duration) -> HeaderValue {
     HeaderValue::from_str(&format!(
-        "{name}={value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={}",
+        "{name}={value}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}",
         max_age.as_secs()
     ))
     .expect("cookie names and hex values are valid header values")
@@ -665,11 +667,14 @@ mod tests {
     fn the_cookie_is_found_among_others() {
         let mut h = HeaderMap::new();
         assert_eq!(cookie_value(&h), None);
-        h.append(header::COOKIE, HeaderValue::from_static("a=1; truelite=x"));
+        h.append(
+            header::COOKIE,
+            HeaderValue::from_static("a=1; truelite-otp=x"),
+        );
         assert_eq!(cookie_value(&h), None);
         h.append(
             header::COOKIE,
-            HeaderValue::from_static("b=2;__Host-truelite=abc ; c=3"),
+            HeaderValue::from_static("b=2;truelite=abc ; c=3"),
         );
         assert_eq!(cookie_value(&h), Some("abc"));
     }
@@ -680,7 +685,7 @@ mod tests {
         assert_eq!(
             set_cookie(&id, Duration::from_secs(86_400)),
             format!(
-                "__Host-truelite={}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=86400",
+                "truelite={}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400",
                 id.as_str()
             )
         );

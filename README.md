@@ -71,7 +71,13 @@ Checks run in CI: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo tes
 ## Deploy on TrueNAS
 
 The image is published to `ghcr.io/davidgailleton/truelite`. Install it as a Custom App
-(Apps → Discover → Install via YAML) with [`compose.example.yaml`](compose.example.yaml).
+(Apps → Discover → Install via YAML) with [`compose.example.yaml`](compose.example.yaml); the app
+name must be lowercase letters, digits and hyphens (e.g. `truelite`).
+
+truelite is meant for your LAN or Tailscale: open it over plain HTTP at any address of the NAS,
+e.g. `http://192.168.1.10:8090` or `http://truenas:8090`. The session cookie is not `Secure`, so
+no HTTPS is needed. Don't expose it to the internet. If you put it behind a reverse proxy that
+rewrites the `Host` header, list the public origin in `TRUELITE_ALLOWED_ORIGINS`.
 
 ## Roadmap
 
