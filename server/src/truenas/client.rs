@@ -602,4 +602,23 @@ mod tests {
         };
         assert!(msg.contains("wss://"), "{msg}");
     }
+
+    /// Against a real NAS: `TRUELITE_NAS_URL=wss://… TRUELITE_NAS_FINGERPRINT=… \
+    /// cargo test nas_smoke -- --ignored`. Read-only (`core.ping`). Any answer from the
+    /// middleware, even "not authenticated", proves the pinned TLS connection works.
+    #[tokio::test]
+    #[ignore = "needs a real NAS"]
+    async fn nas_smoke() {
+        let url = std::env::var("TRUELITE_NAS_URL").expect("TRUELITE_NAS_URL");
+        let fp: Fingerprint = std::env::var("TRUELITE_NAS_FINGERPRINT")
+            .expect("TRUELITE_NAS_FINGERPRINT")
+            .parse()
+            .unwrap();
+        let (c, _n) = Client::connect(&url, pinned(fp), Options::default())
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+        let res = within(c.call("core.ping", json!([]))).await;
+        println!("core.ping -> {res:?}");
+        assert!(matches!(res, Ok(_) | Err(Error::Rpc(_))), "{res:?}");
+    }
 }
