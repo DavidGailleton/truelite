@@ -2,7 +2,7 @@
 // survives navigation. Cleared on logout (a restart ends the NAS session, so it clears too).
 // The wording and the failure rules live in update.ts.
 import { nas, onNasClose } from './nas.svelte';
-import { beginRestartWait } from './restart.svelte';
+import { beginRestartWait, onRestartEnd } from './restart.svelte';
 import { system } from './system.svelte';
 import { runFailure, updateRunCall, type UpdateStatus } from './update';
 import { loadUpdateStatus } from './update.svelte';
@@ -23,6 +23,14 @@ export const updateRun = $state<{ run: UpdateRun | null }>({ run: null });
 let generation = 0;
 
 onNasClose(() => {
+	generation++;
+	updateRun.run = null;
+});
+
+// The wait ended without a new session (the NAS is back, or the user stopped waiting): the card
+// no longer says it restarts. `update.status` then tells what got installed.
+onRestartEnd(() => {
+	if (updateRun.run?.phase !== 'restarting') return;
 	generation++;
 	updateRun.run = null;
 });

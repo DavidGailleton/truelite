@@ -144,7 +144,8 @@ describe('canInstallUpdates', () => {
 
 describe('runFailure', () => {
 	const nas = (errname: string, message = 'm') => ({ code: 'nas' as const, message, errname });
-	const drop = { code: 'disconnected' as const, message: 'gone' };
+	const drop = { code: 'reconnecting' as const, message: 'gone' };
+	const browserDrop = { code: 'disconnected' as const, message: 'gone' };
 
 	it('turns a pre-check warning into a question', () => {
 		expect(
@@ -157,6 +158,13 @@ describe('runFailure', () => {
 		expect(runFailure(drop, { reboot: true, percent: 20 }).kind).toBe('error');
 		expect(runFailure(drop, { reboot: false, percent: 80 }).kind).toBe('error');
 		expect(runFailure(drop, { reboot: true, percent: null }).kind).toBe('error');
+	});
+
+	it("doesn't take the browser's own drop for the restart", () => {
+		expect(runFailure(browserDrop, { reboot: true, percent: 80 })).toMatchObject({
+			kind: 'error',
+			message: expect.stringMatching(/may still be going on/)
+		});
 	});
 
 	it('words role, space and other errors plainly', () => {

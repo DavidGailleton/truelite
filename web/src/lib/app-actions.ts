@@ -5,7 +5,7 @@
 import type { App, AppState, AppUpdate } from './apps';
 import { updateCall } from './app-upgrade';
 import { hasRole } from './system';
-import type { ErrorBody, JobProgress } from './ws';
+import { type ErrorBody, type JobProgress, BUSY_MESSAGE } from './ws';
 
 export type AppAction = 'start' | 'stop' | 'restart' | 'update';
 
@@ -192,7 +192,7 @@ export function actionError(action: AppAction, error: ErrorBody): string {
 		case 'reconnecting':
 			return `The connection dropped while the app was asked to ${verb}. It may still be working on it: watch its state.`;
 		case 'busy':
-			return 'Too many things at once on this page. Try again in a moment.';
+			return BUSY_MESSAGE;
 		default:
 			return `Couldn't ${verb} the app: ${error.message}`;
 	}

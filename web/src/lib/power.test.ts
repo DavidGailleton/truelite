@@ -18,9 +18,15 @@ describe('power calls', () => {
 describe('power outcome', () => {
 	it('is going down on a reply or a dropped link', () => {
 		expect(powerOutcome('reboot', null)).toEqual({ kind: 'going-down' });
-		for (const code of ['disconnected', 'reconnecting', 'logged_out'] as const) {
+		for (const code of ['disconnected', 'reconnecting'] as const) {
 			expect(powerOutcome('shutdown', { code, message: 'x' })).toEqual({ kind: 'going-down' });
 		}
+	});
+
+	it('does not take an ended session for the NAS going down', () => {
+		const out = powerOutcome('reboot', { code: 'logged_out', message: 'x' });
+		expect(out.kind).toBe('error');
+		expect(out.kind === 'error' && out.message).toMatch(/session ended/);
 	});
 
 	it('explains a missing role', () => {

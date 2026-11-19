@@ -6,7 +6,7 @@
 import type { JobCall } from './app-actions';
 import { changelogText } from './app-upgrade';
 import { hasRole, isObj, isStr } from './system';
-import type { ErrorBody } from './ws';
+import { type ErrorBody, BUSY_MESSAGE } from './ws';
 
 export const UPDATE_STATUS = 'update.status';
 
@@ -98,8 +98,9 @@ export const INSTALL_PERCENT = 50;
 
 /**
  * How an `update.run` call that failed ended: a pre-check `warning` the user may accept (call
- * again with `resume`), the NAS `restarting` (the link dropped once the install was under way and
- * a restart was asked), or an `error` in plain words.
+ * again with `resume`), the NAS `restarting` (truelite's link to the NAS dropped once the install
+ * was under way and a restart was asked), or an `error` in plain words. The browser's own link
+ * dropping (`disconnected`, a locked phone) says nothing about the NAS: the job goes on there.
  */
 export type RunFailure =
 	| { kind: 'warning'; message: string }
@@ -126,19 +127,23 @@ export function runFailure(
 		};
 	}
 	switch (error.code) {
-		case 'disconnected':
 		case 'reconnecting':
-			if (reboot && percent !== null && percent >= INSTALL_PERCENT) return { kind: 'restarting' };
+		case 'disconnected':
+			if (
+				error.code === 'reconnecting' &&
+				reboot &&
+				percent !== null &&
+				percent >= INSTALL_PERCENT
+			) {
+				return { kind: 'restarting' };
+			}
 			return {
 				kind: 'error',
 				message:
 					'The connection dropped while the update was running. It may still be going on: check this page again in a few minutes.'
 			};
 		case 'busy':
-			return {
-				kind: 'error',
-				message: 'Too many things at once on this page. Try again in a moment.'
-			};
+			return { kind: 'error', message: BUSY_MESSAGE };
 		default:
 			return { kind: 'error', message: `Couldn't install the update: ${error.message}` };
 	}

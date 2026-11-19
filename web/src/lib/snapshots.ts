@@ -4,7 +4,7 @@
 // SNAPSHOT_DELETE): plain calls, not jobs. Framework-free so it can be unit-tested: the Svelte
 // binding lives in snapshots.svelte.ts.
 import { hasRole, isNum, isObj, isStr } from './system';
-import type { ErrorBody, EventData } from './ws';
+import { type ErrorBody, type EventData, BUSY_MESSAGE } from './ws';
 
 export const SNAPSHOT_QUERY = 'pool.snapshot.query';
 export const SNAPSHOT_CREATE = 'pool.snapshot.create';
@@ -157,7 +157,7 @@ export function snapshotError(action: SnapshotAction, error: ErrorBody): string 
 		case 'reconnecting':
 			return `The connection dropped while truelite asked the NAS to ${what}. Check the list once it's back.`;
 		case 'busy':
-			return 'Too many things at once on this page. Try again in a moment.';
+			return BUSY_MESSAGE;
 		default:
 			return `Couldn't ${what}: ${error.message}`;
 	}

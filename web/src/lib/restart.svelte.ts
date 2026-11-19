@@ -27,6 +27,17 @@ function read(): RestartWait | null {
 
 export const restart = $state<{ wait: RestartWait | null }>({ wait: read() });
 
+const ends: (() => void)[] = [];
+
+/**
+ * Registers a reset run by {@link endRestartWait}, so a store that took the NAS for going down
+ * stops saying so (and stops blocking its buttons) once the wait ends. Stores call it once, at
+ * module load.
+ */
+export function onRestartEnd(reset: () => void): void {
+	ends.push(reset);
+}
+
 /** The NAS is going down: show the restart screen until it is back. */
 export function beginRestartWait(kind: RestartKind, host: string | null): void {
 	const wait: RestartWait = { kind, host, since: Date.now() };
@@ -46,4 +57,5 @@ export function endRestartWait(): void {
 	} catch {
 		// Nothing stored then.
 	}
+	for (const reset of ends) reset();
 }

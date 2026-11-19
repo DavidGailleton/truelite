@@ -4,7 +4,7 @@
 // Framework-free so it can be unit-tested: the Svelte binding lives in power.svelte.ts.
 import type { JobCall } from './app-actions';
 import { hasRole } from './system';
-import type { ErrorBody } from './ws';
+import { type ErrorBody, BUSY_MESSAGE } from './ws';
 
 export type PowerAction = 'reboot' | 'shutdown';
 
@@ -43,8 +43,11 @@ export const POWER_TEXT: Record<
 };
 
 /**
- * How a `system.reboot` / `system.shutdown` call ended: `null` (it answered) or a dropped link
- * mean the NAS is going down; anything else is an error in plain words.
+ * How a `system.reboot` / `system.shutdown` call ended: `null` (it answered), the NAS link
+ * dropping (`reconnecting`) or the browser's own link dropping after the call went out
+ * (`disconnected`, a guess the restart wait undoes if the NAS stays up) mean the NAS is going
+ * down. An ended session (`logged_out`) proves nothing: the call may never have reached the NAS.
+ * Anything else is an error in plain words.
  */
 export function powerOutcome(
 	action: PowerAction,
@@ -54,13 +57,15 @@ export function powerOutcome(
 	switch (error.code) {
 		case 'disconnected':
 		case 'reconnecting':
-		case 'logged_out':
 			return { kind: 'going-down' };
-		case 'busy':
+		case 'logged_out':
 			return {
 				kind: 'error',
-				message: 'Too many things at once on this page. Try again in a moment.'
+				message:
+					'Your session ended before the NAS answered. Log in again and check whether it restarted.'
 			};
+		case 'busy':
+			return { kind: 'error', message: BUSY_MESSAGE };
 	}
 	if (error.errname === 'EACCES') {
 		return {

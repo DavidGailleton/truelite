@@ -25,6 +25,9 @@ export type ErrorCode =
 	| 'logged_out'
 	| 'disconnected';
 
+/** The words for a `busy` error: the page has too many calls in flight. */
+export const BUSY_MESSAGE = 'Too many things at once on this page. Try again in a moment.';
+
 export interface ErrorBody {
 	code: ErrorCode;
 	message: string;

@@ -6,7 +6,7 @@
 import type { JobCall } from './app-actions';
 import { UNAVAILABLE, type Scan } from './pools';
 import { hasRole } from './system';
-import type { ErrorBody } from './ws';
+import { type ErrorBody, BUSY_MESSAGE } from './ws';
 
 export const SCRUB_METHOD = 'pool.scrub.scrub';
 
@@ -128,7 +128,7 @@ export function scrubError(action: ScrubAction, error: ErrorBody): string {
 		case 'reconnecting':
 			return `The connection dropped while truelite asked the NAS to ${what}. It may have worked: watch the pool's status line.`;
 		case 'busy':
-			return 'Too many things at once on this page. Try again in a moment.';
+			return BUSY_MESSAGE;
 		default:
 			return `Couldn't ${what}: ${error.message}`;
 	}
