@@ -2,6 +2,33 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.17.0 — 2026-11-19
+
+### Features
+
+- **system:** Show available TrueNAS update and release notes
+- **release:** Tag images and releases with the targeted TrueNAS version
+- **system:** Install TrueNAS updates with progress
+- **system:** Restart and shut down the NAS with typed confirmation
+- **system:** Full-screen restart wait that goes on when the NAS is back
+
+### Fixes
+
+- **system:** Only a dropped NAS link means the NAS is going down
+- **system:** Guard and word the update install
+- **dashboard:** Keep the update banner below real trouble
+- **system:** Install only the update the user confirmed
+- **server:** Log a NAS certificate mismatch once, not on every probe
+- **system:** End the restart wait only on what the NAS did
+
+### Performance
+
+- **server:** Don't clone the update manifest on each status event
+
+### Refactoring
+
+- **server:** One trimming path for the update status
+
 ## v0.16.0 — 2026-11-19
 
 ### Features
