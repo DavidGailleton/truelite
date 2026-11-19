@@ -3,7 +3,7 @@
 // snapshot (`pool.snapshot.create`, SNAPSHOT_WRITE) and delete one (`pool.snapshot.delete`,
 // SNAPSHOT_DELETE): plain calls, not jobs. Framework-free so it can be unit-tested: the Svelte
 // binding lives in snapshots.svelte.ts.
-import { isObj, isStr } from './system';
+import { hasRole, isNum, isObj, isStr } from './system';
 import type { ErrorBody, EventData } from './ws';
 
 export const SNAPSHOT_QUERY = 'pool.snapshot.query';
@@ -44,8 +44,7 @@ export interface Snapshot {
 	referenced: number | null;
 }
 
-const num = (v: unknown): number | null =>
-	typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
+const num = (v: unknown): number | null => (isNum(v) && v >= 0 ? v : null);
 
 /** One compacted `pool.snapshot.query` entry, or `null` without a `dataset@name` id. */
 export function parseSnapshot(raw: unknown): Snapshot | null {
@@ -128,10 +127,7 @@ export function snapshotNameProblem(name: string, existing: readonly Snapshot[])
 	return null;
 }
 
-const hasRole = (roles: readonly string[] | undefined, role: string) =>
-	roles !== undefined && (roles.includes(role) || roles.includes('FULL_ADMIN'));
-
-/** Roles that may take snapshots (TrueNAS expands FULL_ADMIN, but don't rely on it). */
+/** Roles that may take snapshots. */
 export const canTakeSnapshots = (roles: readonly string[] | undefined) =>
 	hasRole(roles, 'SNAPSHOT_WRITE');
 

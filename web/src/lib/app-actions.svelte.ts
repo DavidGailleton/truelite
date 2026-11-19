@@ -5,7 +5,7 @@ import { SvelteMap } from 'svelte/reactivity';
 import { actionError, type ActionRun, type AppAction, type JobCall } from './app-actions';
 import type { AppState } from './apps';
 import { nas, onNasClose } from './nas.svelte';
-import { NasError } from './ws';
+import { failure } from './ws';
 
 /** A done run is dropped after this even if the app never reached its new state. */
 const SETTLE_MAX_MS = 120_000;
@@ -85,11 +85,8 @@ export function runAction(id: string, action: AppAction, call: JobCall, from: Ap
 				);
 			},
 			(e: unknown) => {
-				const body =
-					e instanceof NasError
-						? { code: e.code, message: e.message, errname: e.errname }
-						: { code: 'bad_request' as const, message: 'Something went wrong.' };
-				update({ ...current, progress: null, done: false, error: actionError(action, body) });
+				const error = actionError(action, failure(e));
+				update({ ...current, progress: null, done: false, error });
 			}
 		);
 }

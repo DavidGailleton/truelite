@@ -4,6 +4,7 @@
 // unit-tested: the Svelte binding lives in app-actions.svelte.ts.
 import type { App, AppState, AppUpdate } from './apps';
 import { updateCall } from './app-upgrade';
+import { hasRole } from './system';
 import type { ErrorBody, JobProgress } from './ws';
 
 export type AppAction = 'start' | 'stop' | 'restart' | 'update';
@@ -175,9 +176,9 @@ export function actionDialog(
 	}
 }
 
-/** Roles that may start, stop and update apps (TrueNAS expands FULL_ADMIN, but don't rely on it). */
+/** Roles that may start, stop and update apps. */
 export function canChangeApps(roles: readonly string[] | undefined): boolean {
-	return roles !== undefined && (roles.includes('APPS_WRITE') || roles.includes('FULL_ADMIN'));
+	return hasRole(roles, 'APPS_WRITE');
 }
 
 /** The failure of an action in plain words. */

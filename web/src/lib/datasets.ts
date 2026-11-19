@@ -2,7 +2,7 @@
 // DATASET_READ). The server flattens each space property to bytes (`truenas/datasets.rs`); the
 // list comes flat and the tree is built here. Framework-free so it can be unit-tested: the
 // Svelte binding lives in datasets.svelte.ts.
-import { FULL_CRITICAL, FULL_WARNING, bytesOf, type Level } from './pools';
+import { bytesOf, fullLevel, type Level } from './pools';
 import { isObj, isStr } from './system';
 
 export const DATASET_QUERY = 'pool.dataset.query';
@@ -151,8 +151,7 @@ export function datasetUsage(d: Dataset): DatasetUsage | null {
 	const total = d.used + d.available;
 	if (total <= 0) return null;
 	const percent = Math.min(100, (d.used / total) * 100);
-	const level = percent >= FULL_CRITICAL ? 'critical' : percent >= FULL_WARNING ? 'warning' : 'ok';
-	return { percent, level };
+	return { percent, level: fullLevel(percent) };
 }
 
 /** Locked, or a quota nearly reached. A full pool is the pool card's business. */

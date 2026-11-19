@@ -18,7 +18,9 @@
 	import { ago } from '#lib/time.js';
 	import Card from './Card.svelte';
 	import CardNotice from './CardNotice.svelte';
+	import BackLink from './BackLink.svelte';
 	import ConfirmDialog from './ConfirmDialog.svelte';
+	import ErrorBanner from './ErrorBanner.svelte';
 	import Icon from './Icon.svelte';
 	import PageHeader from './PageHeader.svelte';
 
@@ -41,18 +43,19 @@
 	const dim = $derived(
 		(view.kind === 'ready' || view.kind === 'empty') && (view.paused || view.stale !== null)
 	);
-	const canTake = $derived(live && canTakeSnapshots(session.user?.roles));
-	const canDelete = $derived(live && canDeleteSnapshots(session.user?.roles));
+	const mayTake = $derived(canTakeSnapshots(session.user?.roles));
+	const mayDelete = $derived(canDeleteSnapshots(session.user?.roles));
+	const canTake = $derived(live && mayTake);
+	const canDelete = $derived(live && mayDelete);
 	const roleLine = $derived.by(() => {
 		if (view.kind !== 'ready' && view.kind !== 'empty') return null;
-		const roles = session.user?.roles;
-		if (!canTakeSnapshots(roles) && !canDeleteSnapshots(roles)) {
+		if (!mayTake && !mayDelete) {
 			return 'Your account can only look at snapshots. Taking and deleting them needs the Snapshot write and delete roles on the NAS.';
 		}
-		if (!canDeleteSnapshots(roles)) {
+		if (!mayDelete) {
 			return "Your account can't delete snapshots. It needs the Snapshot delete role (SNAPSHOT_DELETE) on the NAS.";
 		}
-		if (!canTakeSnapshots(roles)) {
+		if (!mayTake) {
 			return "Your account can't take snapshots. It needs the Snapshot write role (SNAPSHOT_WRITE) on the NAS.";
 		}
 		return null;
@@ -96,7 +99,7 @@
 	}
 </script>
 
-<a class="back" href="/storage"><Icon name="arrow-left" size={16} />Storage</a>
+<BackLink href="/storage" label="Storage" />
 
 {#snippet headerActions()}
 	{#if canTake}
@@ -129,18 +132,7 @@
 		<p class="busy" role="status">{busyText}</p>
 	{/if}
 	{#if store.runError}
-		<div class="error" role="alert">
-			<Icon name="circle-alert" size={16} />
-			<p>{store.runError}</p>
-			<button
-				type="button"
-				class="dismiss"
-				aria-label="Dismiss"
-				onclick={() => (store.runError = null)}
-			>
-				×
-			</button>
-		</div>
+		<ErrorBanner message={store.runError} ondismiss={() => (store.runError = null)} />
 	{/if}
 	{#if roleLine}
 		<p class="note">{roleLine}</p>
@@ -239,20 +231,6 @@
 	p {
 		margin: 0;
 	}
-	.back {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
-		min-height: 2rem;
-		margin-bottom: var(--space-1);
-		color: var(--text-secondary);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		text-decoration: none;
-	}
-	.back:hover {
-		color: var(--text-primary);
-	}
 	.take {
 		display: inline-flex;
 		align-items: center;
@@ -321,41 +299,6 @@
 		cursor: not-allowed;
 	}
 
-	.error {
-		display: flex;
-		align-items: flex-start;
-		gap: var(--space-2);
-		padding: var(--space-2) var(--space-3);
-		border-radius: var(--radius-md);
-		background: var(--destructive-tint);
-		color: var(--destructive);
-		font-size: var(--text-sm);
-	}
-	.error > :global(svg) {
-		flex: none;
-		margin-top: 0.125rem;
-	}
-	.error p {
-		flex: 1;
-		color: var(--text-primary);
-	}
-	.dismiss {
-		flex: none;
-		width: 1.5rem;
-		height: 1.5rem;
-		margin: -0.125rem -0.25rem 0 0;
-		border: 0;
-		border-radius: var(--radius-md);
-		background: transparent;
-		color: var(--text-secondary);
-		font: inherit;
-		font-size: var(--text-base);
-		cursor: pointer;
-	}
-	.dismiss:hover {
-		color: var(--text-primary);
-	}
-
 	/* The Take snapshot dialog. */
 	.field {
 		display: grid;
@@ -391,7 +334,6 @@
 	}
 
 	@media (pointer: coarse) {
-		.back,
 		.check {
 			min-height: var(--touch);
 		}

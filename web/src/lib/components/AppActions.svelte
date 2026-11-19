@@ -24,6 +24,7 @@
 	import { nas } from '#lib/nas.svelte.js';
 	import { NasError } from '#lib/ws.js';
 	import ConfirmDialog from './ConfirmDialog.svelte';
+	import ErrorBanner from './ErrorBanner.svelte';
 	import Icon from './Icon.svelte';
 	import JobProgress from './JobProgress.svelte';
 
@@ -150,18 +151,7 @@
 			</div>
 		{/if}
 		{#if run?.error}
-			<div class="error" role="alert">
-				<Icon name="circle-alert" size={16} />
-				<p>{run.error}</p>
-				<button
-					type="button"
-					class="dismiss"
-					aria-label="Dismiss"
-					onclick={() => dismissAction(app.id)}
-				>
-					×
-				</button>
-			</div>
+			<ErrorBanner message={run.error} {compact} ondismiss={() => dismissAction(app.id)} />
 		{/if}
 	</div>
 {/if}
@@ -249,51 +239,6 @@
 	.compact :global(.job) {
 		font-size: var(--text-xs);
 		color: var(--text-secondary);
-	}
-
-	.error {
-		display: flex;
-		align-items: flex-start;
-		gap: var(--space-2);
-		padding: var(--space-2) var(--space-3);
-		border-radius: var(--radius-md);
-		background: var(--destructive-tint);
-		color: var(--destructive);
-		font-size: var(--text-sm);
-	}
-	.compact .error {
-		font-size: var(--text-xs);
-	}
-	.error > :global(svg) {
-		flex: none;
-		margin-top: 0.125rem;
-	}
-	.error p {
-		flex: 1;
-		color: var(--text-primary);
-	}
-	.dismiss {
-		flex: none;
-		width: 1.5rem;
-		height: 1.5rem;
-		margin: -0.125rem -0.25rem 0 0;
-		border: 0;
-		border-radius: var(--radius-md);
-		background: transparent;
-		color: var(--text-secondary);
-		font: inherit;
-		font-size: var(--text-base);
-		cursor: pointer;
-	}
-	.dismiss:hover {
-		color: var(--text-primary);
-	}
-	@media (pointer: coarse) {
-		.dismiss {
-			width: var(--touch);
-			height: var(--touch);
-			margin: calc(-1 * var(--space-3)) calc(-1 * var(--space-3)) 0 0;
-		}
 	}
 
 	/* The Update dialog's content. */

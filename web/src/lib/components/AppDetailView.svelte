@@ -17,6 +17,7 @@
 	import CardBadge from './CardBadge.svelte';
 	import CardNotice from './CardNotice.svelte';
 	import EmptyState from './EmptyState.svelte';
+	import BackLink from './BackLink.svelte';
 	import Icon from './Icon.svelte';
 	import PageHeader from './PageHeader.svelte';
 	import StatusPill from './StatusPill.svelte';
@@ -58,7 +59,7 @@
 	);
 </script>
 
-<a class="back" href="/apps"><Icon name="arrow-left" size={16} />Apps</a>
+<BackLink href="/apps" label="Apps" />
 
 {#snippet headerActions()}
 	{#if detail && detail.containers.length > 0}
@@ -199,25 +200,6 @@
 <style>
 	p {
 		margin: 0;
-	}
-	.back {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
-		min-height: 2rem;
-		margin-bottom: var(--space-1);
-		color: var(--text-secondary);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		text-decoration: none;
-	}
-	.back:hover {
-		color: var(--text-primary);
-	}
-	@media (pointer: coarse) {
-		.back {
-			min-height: var(--touch);
-		}
 	}
 	.link-button {
 		display: inline-flex;

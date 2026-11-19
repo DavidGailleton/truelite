@@ -2,7 +2,7 @@
 //!
 //! - Call results and events carry every requested ZFS property as an object
 //!   `{value, rawvalue, source, parsed}`. The bridge keeps a few plain fields and turns the
-//!   properties into numbers: [`compact_entry`].
+//!   properties into numbers: [`compact`].
 //! - `pool.snapshot.create` and `pool.snapshot.delete` are plain calls, not jobs (middlewared
 //!   TS-25.10.8, `plugins/pool_/snapshot.py`). Their params are rebuilt from checked values
 //!   ([`create_param`], [`delete_param`]): never a naming schema, an exclude list, properties,
@@ -12,7 +12,9 @@
 //! `SNAPSHOT_READ`), `pool.snapshot.create` (`SNAPSHOT_WRITE`), `pool.snapshot.delete`
 //! (`SNAPSHOT_DELETE`), event `pool.snapshot.query` (`SNAPSHOT_READ`).
 
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
+
+use super::reshape::keep_fields;
 
 use super::datasets::bytes;
 
@@ -49,12 +51,12 @@ fn created(prop: &Value) -> Option<u64> {
 
 /// One snapshot with [`FIELDS`], [`SPACE`] as bytes, `created` as seconds and `txg` (creation
 /// order) as a number; `None` when it is not an object. Every other field is dropped.
-pub fn compact_entry(entry: &Value) -> Option<Value> {
+/// Also an event's `fields`.
+pub fn compact(entry: &Value) -> Option<Value> {
     let obj = entry.as_object()?;
-    let mut out: Map<String, Value> = FIELDS
-        .iter()
-        .filter_map(|&k| obj.get(k).map(|v| (k.to_owned(), v.clone())))
-        .collect();
+    let Value::Object(mut out) = keep_fields(entry, FIELDS)? else {
+        return None;
+    };
     if let Some(txg) = obj
         .get("createtxg")
         .and_then(Value::as_str)
@@ -75,17 +77,12 @@ pub fn compact_entry(entry: &Value) -> Option<Value> {
     Some(Value::Object(out))
 }
 
-/// Event `fields`: the same as a call result entry.
-pub fn compact(fields: &Value) -> Option<Value> {
-    compact_entry(fields)
-}
-
 /// A `pool.snapshot.query` result with every entry compacted; entries that are not objects are
 /// dropped. A result that is not a list (`get`) is compacted alone, or returned unchanged.
 pub fn compact_list(result: Value) -> Value {
     match result {
-        Value::Array(list) => Value::Array(list.iter().filter_map(compact_entry).collect()),
-        Value::Object(_) => compact_entry(&result).unwrap_or(result),
+        Value::Array(list) => Value::Array(list.iter().filter_map(compact).collect()),
+        Value::Object(_) => compact(&result).unwrap_or(result),
         other => other,
     }
 }
@@ -172,9 +169,9 @@ mod tests {
     #[test]
     fn creation_reads_parsed_dates_too() {
         let date = json!({"properties": {"creation": {"rawvalue": "x", "parsed": {"$date": 1_795_082_400_123_u64}}}});
-        assert_eq!(compact_entry(&date).unwrap()["created"], 1_795_082_400);
+        assert_eq!(compact(&date).unwrap()["created"], 1_795_082_400);
         let secs = json!({"properties": {"creation": {"parsed": 5}}});
-        assert_eq!(compact_entry(&secs).unwrap()["created"], 5);
+        assert_eq!(compact(&secs).unwrap()["created"], 5);
     }
 
     #[test]

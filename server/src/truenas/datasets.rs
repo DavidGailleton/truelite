@@ -1,13 +1,15 @@
 //! `pool.dataset.query`, call results and events: every ZFS property comes as an object
 //! `{parsed, rawvalue, value, source, source_info}` (about 150 bytes), and events send the whole
 //! dataset. The bridge keeps a few plain fields and turns each space property into a number of
-//! bytes: [`compact_entry`]. The storage page's tree and the dashboard's root usage read only
+//! bytes: [`compact`]. The storage page's tree and the dashboard's root usage read only
 //! those.
 //!
 //! Schema: <https://api.truenas.com/v25.10/api_methods_pool.dataset.query.html>, event
 //! <https://api.truenas.com/v25.10/api_events_pool.dataset.query.html> (role `DATASET_READ`).
 
-use serde_json::{Map, Value};
+use serde_json::Value;
+
+use super::reshape::keep_fields;
 
 /// The method and the event name, as the browser calls and subscribes to them.
 pub const EVENT: &str = "pool.dataset.query";
@@ -29,12 +31,12 @@ pub(super) fn bytes(prop: &Value) -> Option<u64> {
 
 /// One dataset with [`FIELDS`] and [`PROPS`] as numbers; `None` when it is not an object.
 /// `children`, `user_properties`, `mountpoint` and every other property are dropped.
-pub fn compact_entry(entry: &Value) -> Option<Value> {
+/// Also an event's `fields`.
+pub fn compact(entry: &Value) -> Option<Value> {
     let obj = entry.as_object()?;
-    let mut out: Map<String, Value> = FIELDS
-        .iter()
-        .filter_map(|&k| obj.get(k).map(|v| (k.to_owned(), v.clone())))
-        .collect();
+    let Value::Object(mut out) = keep_fields(entry, FIELDS)? else {
+        return None;
+    };
     for &k in PROPS {
         if let Some(n) = obj.get(k).and_then(bytes) {
             out.insert(k.to_owned(), Value::from(n));
@@ -43,16 +45,11 @@ pub fn compact_entry(entry: &Value) -> Option<Value> {
     Some(Value::Object(out))
 }
 
-/// Event `fields`: the same as a call result entry.
-pub fn compact(fields: &Value) -> Option<Value> {
-    compact_entry(fields)
-}
-
 /// A `pool.dataset.query` result with every entry compacted; entries that are not objects are
 /// dropped. A result that is not a list is returned unchanged.
 pub fn compact_list(result: Value) -> Value {
     match result {
-        Value::Array(list) => Value::Array(list.iter().filter_map(compact_entry).collect()),
+        Value::Array(list) => Value::Array(list.iter().filter_map(compact).collect()),
         other => other,
     }
 }
@@ -97,7 +94,7 @@ mod tests {
 
     #[test]
     fn a_property_falls_back_to_its_raw_value() {
-        let out = compact_entry(&json!({"id": "a",
+        let out = compact(&json!({"id": "a",
             "used": {"parsed": null, "rawvalue": "42"},
             "available": {"parsed": "x", "rawvalue": "none"},
             "quota": 7}))

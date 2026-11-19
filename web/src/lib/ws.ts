@@ -49,8 +49,15 @@ export class NasError extends Error {
  * next `resumed` queries again.
  */
 export function shownError(e: unknown): ErrorBody | null {
+	if (e instanceof NasError && ['disconnected', 'reconnecting', 'logged_out'].includes(e.code)) {
+		return null;
+	}
+	return failure(e);
+}
+
+/** A failed call as an error body: a {@link NasError}'s own, or a generic one. */
+export function failure(e: unknown): ErrorBody {
 	if (!(e instanceof NasError)) return { code: 'bad_request', message: 'Something went wrong.' };
-	if (['disconnected', 'reconnecting', 'logged_out'].includes(e.code)) return null;
 	return { code: e.code, message: e.message, errname: e.errname };
 }
 

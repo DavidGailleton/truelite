@@ -17,7 +17,7 @@ import {
 	type Snapshot,
 	type SnapshotAction
 } from './snapshots';
-import { NasError, needsRefetch, shownError, type ErrorBody, type TopicMessage } from './ws';
+import { failure, needsRefetch, shownError, type ErrorBody, type TopicMessage } from './ws';
 
 /** Read again when the page comes back after this long. */
 const STALE_MS = 60_000;
@@ -111,11 +111,7 @@ export class SnapshotStore {
 		try {
 			await work();
 		} catch (e) {
-			const error: ErrorBody =
-				e instanceof NasError
-					? { code: e.code, message: e.message, errname: e.errname }
-					: { code: 'bad_request', message: 'Something went wrong.' };
-			this.runError = snapshotError(run.action, error);
+			this.runError = snapshotError(run.action, failure(e));
 		} finally {
 			this.run = null;
 		}

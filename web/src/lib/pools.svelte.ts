@@ -53,6 +53,7 @@ let layoutWanted = 0;
 let layoutRequest = 0;
 let layoutAt = 0;
 let layoutTimer: ReturnType<typeof setTimeout> | undefined;
+let stopLayoutWatch: (() => void) | undefined;
 
 let listRequest = 0;
 let usageRequest = 0;
@@ -164,6 +165,12 @@ function loadLayouts(): void {
 		});
 }
 
+/** Events carry no topology (`truenas/pools.rs`): read the layouts again, debounced. */
+function loadLayoutsSoon(): void {
+	clearTimeout(layoutTimer);
+	layoutTimer = setTimeout(loadLayouts, USAGE_DEBOUNCE_MS);
+}
+
 function loadUsageSoon(): void {
 	clearTimeout(usageTimer);
 	usageTimer = setTimeout(loadUsage, USAGE_DEBOUNCE_MS);
@@ -180,11 +187,6 @@ function onPoolMessage(message: TopicMessage): void {
 		pools.list = next;
 		for (const listener of poolChangeListeners) listener();
 		if (message.data.kind !== 'removed') loadUsageSoon();
-		// Events carry no topology (`truenas/pools.rs`): read the layouts again, debounced.
-		if (layoutWanted > 0 && message.data.kind !== 'removed') {
-			clearTimeout(layoutTimer);
-			layoutTimer = setTimeout(loadLayouts, USAGE_DEBOUNCE_MS);
-		}
 	} else if (message.status === 'ended') {
 		pools.error = message.error;
 	} else if (needsRefetch(message)) {
@@ -229,7 +231,7 @@ export function usePools(): { retry(): void } {
  * reads them once the list arrives. Plain function so tests can drive it without a component.
  */
 export function wantLayouts(): () => void {
-	layoutWanted++;
+	if (layoutWanted++ === 0) stopLayoutWatch = onPoolChange(loadLayoutsSoon);
 	if (pools.list && (!layouts.map || performance.now() - layoutAt > USAGE_STALE_MS)) {
 		loadLayouts();
 	}
@@ -237,7 +239,11 @@ export function wantLayouts(): () => void {
 	return () => {
 		if (released) return;
 		released = true;
-		if (--layoutWanted === 0) clearTimeout(layoutTimer);
+		if (--layoutWanted === 0) {
+			clearTimeout(layoutTimer);
+			stopLayoutWatch?.();
+			stopLayoutWatch = undefined;
+		}
 	};
 }
 

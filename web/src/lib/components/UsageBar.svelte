@@ -1,14 +1,12 @@
 <script lang="ts">
 	// A pool's space: a bar coloured by how full it is, then "X used of Y · Z%". Shared by the
 	// dashboard's Storage card and the pools page.
-	import { FULL_CRITICAL, FULL_WARNING, type Usage } from '#lib/pools.js';
+	import { fullLevel, type Usage } from '#lib/pools.js';
 	import { formatBytes, formatPercent } from '#lib/realtime.js';
 
 	let { usage, name }: { usage: Usage; name: string } = $props();
 
-	const fill = $derived(
-		usage.percent >= FULL_CRITICAL ? 'critical' : usage.percent >= FULL_WARNING ? 'warning' : 'ok'
-	);
+	const fill = $derived(fullLevel(usage.percent));
 </script>
 
 <div

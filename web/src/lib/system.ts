@@ -29,6 +29,10 @@ export const isStr = (v: unknown): v is string => typeof v === 'string';
 export const isObj = (v: unknown): v is Record<string, unknown> =>
 	typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** Whether `roles` hold `role` or FULL_ADMIN (TrueNAS expands FULL_ADMIN, but don't rely on it). */
+export const hasRole = (roles: readonly string[] | undefined, role: string): boolean =>
+	roles !== undefined && (roles.includes(role) || roles.includes('FULL_ADMIN'));
+
 /** A middleware datetime: `{"$date": ms}` on the wire, or an ISO string. */
 export function parseDate(v: unknown): Date | null {
 	const raw = isObj(v) ? v.$date : v;

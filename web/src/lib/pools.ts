@@ -190,6 +190,10 @@ export function usage(pool: Pool, root?: RootUsage): Usage | null {
 export const FULL_WARNING = 80;
 export const FULL_CRITICAL = 90;
 
+/** How full `percent` is against those thresholds. */
+export const fullLevel = (percent: number): Level =>
+	percent >= FULL_CRITICAL ? 'critical' : percent >= FULL_WARNING ? 'warning' : 'ok';
+
 const UNAVAILABLE = new Set(['FAULTED', 'UNAVAIL', 'OFFLINE', 'REMOVED', 'SUSPENDED']);
 /** `status_code`s that set `warning` but need no action from the user here. */
 const BENIGN_CODES = new Set(['OK', 'FEAT_DISABLED']);
