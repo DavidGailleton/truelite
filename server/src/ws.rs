@@ -1174,6 +1174,55 @@ mod tests {
         assert_eq!(sent, [json!(["tank", "START"])]);
     }
 
+    /// #41: installing an update is a job whose params truelite rebuilds, pinning the version.
+    #[tokio::test]
+    async fn update_run_goes_upstream_rebuilt() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        for (id, params) in (1..).zip([
+            json!([]),
+            json!([{"reboot": true}]),
+            json!([{"train": "T", "version": null, "reboot": true}]),
+            json!([{"train": "T", "version": "25.10.9", "reboot": "yes"}]),
+        ]) {
+            send(
+                &mut ws,
+                json!({"op": "call", "id": id, "method": "update.run", "params": params}),
+            )
+            .await;
+            assert_eq!(next(&mut ws).await["error"]["code"], "bad_request");
+        }
+        send(
+            &mut ws,
+            json!({"op": "call", "id": 7, "method": "update.download", "params": ["T", "1"]}),
+        )
+        .await;
+        assert_eq!(next(&mut ws).await["error"]["code"], "not_allowed");
+        let attrs = json!({"train": "TrueNAS-SCALE-Goldeye", "version": "25.10.9",
+            "reboot": true, "dataset_name": "x"});
+        send(
+            &mut ws,
+            json!({"op": "call", "id": 8, "method": "update.run", "params": [attrs]}),
+        )
+        .await;
+        assert_eq!(next(&mut ws).await["progress"]["percent"], 50);
+        assert_eq!(next(&mut ws).await, json!({"id": 8, "result": null}));
+        let sent: Vec<Value> = h
+            .mock
+            .requests()
+            .into_iter()
+            .filter(|c| c.method.starts_with("update."))
+            .map(|c| c.params)
+            .collect();
+        assert_eq!(
+            sent,
+            [
+                json!([{"train": "TrueNAS-SCALE-Goldeye", "version": "25.10.9",
+                "reboot": true, "resume": false}])
+            ]
+        );
+    }
+
     /// #37: snapshot actions are plain calls whose params truelite rebuilds; their answers
     /// come back like any call's, the new snapshot cut down like the list.
     #[tokio::test]

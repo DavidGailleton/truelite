@@ -121,6 +121,10 @@ const JOB_METHODS: &[(&str, ActionCheck)] = &[
     // Storage page: Check now, Pause, Resume, Stop a scrub (POOL_WRITE). Params
     // `[pool, "START"|"PAUSE"|"STOP"]`; START's job lasts the whole scrub.
     ("pool.scrub.scrub", crate::truenas::pools::scrub_param),
+    // System page: Install update (SYSTEM_UPDATE_WRITE). Params `[{train, version, reboot,
+    // resume}]`: the version shown is pinned; `reboot` restarts the NAS once installed (no
+    // FULL_ADMIN needed, TrueNAS calls `system.reboot` itself).
+    ("update.run", crate::truenas::update::run_param),
 ];
 
 /// Actions that are plain calls (no job): each with the check that rebuilds its params. The
@@ -241,8 +245,21 @@ mod tests {
             assert!(!a.method(near) && a.event(near).is_none(), "{near:?}");
         }
         assert!(a.method("update.status") && a.event("update.status").is_some());
-        for near in ["update", "update.run", "update.download", "update.update"] {
+        for near in [
+            "update",
+            "update.run",
+            "update.download",
+            "update.update",
+            "update.manual",
+        ] {
             assert!(!a.method(near) && a.event(near).is_none(), "{near:?}");
+        }
+        assert!(a.job("update.run").is_some());
+        for near in ["update.download", "update.manual", "update.file", "update"] {
+            assert!(
+                a.job(near).is_none() && a.action(near).is_none(),
+                "{near:?}"
+            );
         }
         assert!(a.event("alert").is_none());
         assert!(a.event("reporting.realtime:{\"interval\": 2}").is_none());

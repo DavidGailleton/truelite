@@ -502,7 +502,7 @@ pub fn fake_nas() -> (
                 Reply::Ignore
             }
             "app.start" | "app.stop" | "app.redeploy" | "app.upgrade" | "app.pull_images"
-            | "pool.scrub.scrub" => {
+            | "pool.scrub.scrub" | "update.run" => {
                 let job = |id: u32, ids: &str, percent: u32| {
                     format!(
                         r#"{{"jsonrpc":"2.0","method":"collection_update","params":{{"msg":"added","collection":"core.get_jobs","id":{id},"fields":{{"id":{id},"message_ids":[{ids}],"method":"{method}","state":"RUNNING","progress":{{"percent":{percent},"description":"Working on {app}","extra":null}}}}}}}}"#,

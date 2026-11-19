@@ -1,16 +1,29 @@
 <script lang="ts">
 	// Updates card on the System page (#40): installed version, update channel, and either "up to
-	// date", the version on offer with its release notes, or why the check failed. Live from
-	// `update.status` events; the page calls useUpdateStatus() and useSystemInfo().
+	// date", the version on offer with its release notes, "restart needed", or why the check
+	// failed. Live from `update.status` events; the page calls useUpdateStatus() and
+	// useSystemInfo(). Install update (#41): confirmed in a dialog (restarting asks for the NAS
+	// name), then the job's progress; a pre-check warning asks again before going on.
 	import { cardView } from '#lib/card-state.js';
 	import { connection } from '#lib/nas.svelte.js';
+	import { session } from '#lib/session.svelte.js';
 	import { versionLabel } from '#lib/system.js';
 	import { system } from '#lib/system.svelte.js';
+	import { canInstallUpdates } from '#lib/update.js';
 	import { update } from '#lib/update.svelte.js';
+	import {
+		dismissUpdateRun,
+		installUpdate,
+		updateBusy,
+		updateRun
+	} from '#lib/update-run.svelte.js';
 	import Card from './Card.svelte';
 	import CardBadge from './CardBadge.svelte';
 	import CardNotice from './CardNotice.svelte';
+	import ConfirmDialog from './ConfirmDialog.svelte';
+	import ErrorBanner from './ErrorBanner.svelte';
 	import Icon from './Icon.svelte';
+	import JobProgress from './JobProgress.svelte';
 	import StatusPill from './StatusPill.svelte';
 
 	let { onretry }: { onretry: () => void } = $props();
@@ -20,6 +33,42 @@
 		cardView({ hasData: status !== null, error: update.error, status: connection.status })
 	);
 	const installed = $derived(system.info ? versionLabel(system.info.version) : null);
+	const hostname = $derived(system.info?.hostname ?? null);
+
+	const run = $derived(updateRun.run);
+	const canInstall = $derived(
+		status?.kind === 'available' &&
+			view.kind === 'ready' &&
+			!view.paused &&
+			!updateBusy() &&
+			canInstallUpdates(session.user?.roles)
+	);
+
+	/** The version the open dialog offers; confirming installs that one, nothing newer. */
+	let asking = $state<string | null>(null);
+	/** Restart the NAS once installed (TrueNAS UI default: yes). */
+	let reboot = $state(true);
+	// The offer changed or the link dropped: don't confirm something the user did not see.
+	$effect(() => {
+		if (asking !== null && (!canInstall || status?.newVersion !== asking)) asking = null;
+	});
+
+	function ask() {
+		dismissUpdateRun();
+		reboot = true;
+		asking = status?.newVersion ?? null;
+	}
+
+	function confirmInstall() {
+		if (status && asking !== null) installUpdate(status, { reboot });
+		asking = null;
+	}
+
+	function acceptWarning() {
+		if (status && run?.phase === 'warning') {
+			installUpdate(status, { reboot: run.reboot, resume: true });
+		}
+	}
 </script>
 
 {#snippet badge()}<CardBadge {view} />{/snippet}
@@ -51,6 +100,8 @@
 					<dd>
 						{#if status.kind === 'available'}
 							<StatusPill label="Update available" tone="warning" />
+						{:else if status.kind === 'restart'}
+							<StatusPill label="Restart needed" tone="warning" />
 						{:else if status.kind === 'current'}
 							<StatusPill label="Up to date" tone="success" />
 						{:else}
@@ -67,6 +118,8 @@
 			</dl>
 			{#if status.kind === 'current'}
 				<p class="context">TrueNAS is up to date.</p>
+			{:else if status.kind === 'restart'}
+				<p class="context">An update is installed. Restart the NAS to finish.</p>
 			{:else if status.kind === 'error'}
 				<p class="context">{status.error}</p>
 			{:else}
@@ -82,6 +135,23 @@
 					</a>
 				{/if}
 			{/if}
+			{#if run?.phase === 'running'}
+				<JobProgress progress={run.progress} label="Downloading the update…" />
+			{:else if run?.phase === 'restarting'}
+				<p class="note" role="status">
+					Installed. The NAS restarts in a few seconds and is away for a few minutes; log in again
+					when it's back.
+				</p>
+			{:else if run?.phase === 'installed' && status.kind !== 'restart'}
+				<p class="note" role="status">Installed. Restart the NAS to finish.</p>
+			{:else if run?.phase === 'failed'}
+				<ErrorBanner message={run.message} ondismiss={dismissUpdateRun} />
+			{/if}
+			{#if canInstall}
+				<button type="button" class="button-primary install" onclick={ask}>
+					<Icon name="circle-arrow-up" size={16} />Install update
+				</button>
+			{/if}
 		</div>
 	{:else if view.kind === 'loading'}
 		<dl aria-hidden="true">
@@ -95,6 +165,34 @@
 		<p class="visually-hidden">Checking for updates…</p>
 	{/if}
 </Card>
+
+{#if asking !== null}
+	<ConfirmDialog
+		title="Install {versionLabel(asking)}?"
+		text="The NAS downloads the update, then installs it. Apps and shares keep running until the restart; the NAS is unreachable for a few minutes while it restarts."
+		confirm={reboot ? 'Install and restart' : 'Install'}
+		destructive={reboot}
+		typeToConfirm={reboot ? (hostname ?? undefined) : undefined}
+		onconfirm={confirmInstall}
+		oncancel={() => (asking = null)}
+	>
+		<label class="check">
+			<input type="checkbox" bind:checked={reboot} />
+			Restart the NAS when installed
+		</label>
+	</ConfirmDialog>
+{/if}
+
+{#if run?.phase === 'warning'}
+	<ConfirmDialog
+		title="TrueNAS has a warning about this update"
+		text={run.message}
+		confirm="Install anyway"
+		destructive
+		onconfirm={acceptWarning}
+		oncancel={dismissUpdateRun}
+	/>
+{/if}
 
 <style>
 	p {
@@ -155,6 +253,28 @@
 		font-size: var(--text-sm);
 		white-space: pre-line;
 	}
+	.note {
+		font-size: var(--text-sm);
+	}
+	.install {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-1);
+		justify-self: start;
+	}
+	.check {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		min-height: 2rem;
+		font-size: var(--text-sm);
+		cursor: pointer;
+	}
+	.check input {
+		width: 1rem;
+		height: 1rem;
+		margin: 0;
+	}
 	.notes-link {
 		display: inline-flex;
 		align-items: center;
@@ -165,6 +285,28 @@
 	}
 	@media (pointer: coarse) {
 		details summary,
+		.note {
+			font-size: var(--text-sm);
+		}
+		.install {
+			display: inline-flex;
+			align-items: center;
+			gap: var(--space-1);
+			justify-self: start;
+		}
+		.check {
+			display: flex;
+			align-items: center;
+			gap: var(--space-2);
+			min-height: 2rem;
+			font-size: var(--text-sm);
+			cursor: pointer;
+		}
+		.check input {
+			width: 1rem;
+			height: 1rem;
+			margin: 0;
+		}
 		.notes-link {
 			min-height: var(--touch);
 		}

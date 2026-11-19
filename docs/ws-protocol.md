@@ -65,6 +65,14 @@ TrueNAS jobs (`JOB_METHODS` in `server/src/allowlist.rs`). The app jobs need `AP
   scrub** (hours) and ends when it finishes, pauses or is stopped; follow the scrub through the
   `pool.scan` event rather than this reply. `pool.scrub.run` is not allowed: it does nothing
   unless a scrub is due.
+- `update.run` (`SYSTEM_UPDATE_WRITE`): `[{"train": t, "version": v, "reboot": bool, "resume":
+  bool}]` (`resume` optional, default false); sent with exactly these keys, never
+  `dataset_name`. `train` and `version` are required (letters, digits, `. _ -`, at most 64
+  characters), from `update.status`, so the NAS installs the version the user saw. Progress:
+  download 0–50 %, install 50–100 % (no final 100 %). With `reboot` the NAS restarts about 10 s
+  after the reply. A pre-check warning fails the job with `errname` `EAGAIN` and the warning as
+  the message: call again with `resume: true` to accept it. Without `reboot`, `update.status`
+  then reports `code: ERROR`, `errname` `EREBOOTREQUIRED`. `update.download` is not allowed.
 
 The server follows the job on the NAS and sends its progress under the call's `id` until the
 reply:

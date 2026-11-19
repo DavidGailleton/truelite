@@ -1,11 +1,12 @@
 <script lang="ts">
-	// Dashboard banner when a TrueNAS update is available (#40): one line and a link to the
-	// System page, where the release notes are. Renders nothing otherwise.
+	// Dashboard banner when a TrueNAS update is available (#40) or installed and waiting for a
+	// restart (#41): one line and a link to the System page. Renders nothing otherwise.
 	import { versionLabel } from '#lib/system.js';
-	import { availableVersion } from '#lib/update.svelte.js';
+	import { availableVersion, update } from '#lib/update.svelte.js';
 	import Icon from './Icon.svelte';
 
 	const version = $derived(availableVersion());
+	const restart = $derived(update.status?.kind === 'restart');
 </script>
 
 {#if version}
@@ -13,6 +14,12 @@
 		<Icon name="circle-arrow-up" size={20} />
 		<p>{versionLabel(version)} is available.</p>
 		<a href="/system">See what's new <Icon name="arrow-right" size={16} /></a>
+	</section>
+{:else if restart}
+	<section class="banner" aria-label="TrueNAS update">
+		<Icon name="circle-arrow-up" size={20} />
+		<p>An update is installed. Restart the NAS to finish.</p>
+		<a href="/system">System <Icon name="arrow-right" size={16} /></a>
 	</section>
 {/if}
 

@@ -6,8 +6,14 @@
 //! <https://api.truenas.com/v25.10/api_events_update.status.html> (role `SYSTEM_UPDATE_READ`).
 //! The event's `fields` are documented as `{status: <UpdateStatus>}`; both that and a flat
 //! `UpdateStatus` are accepted until the NAS shows which one it sends.
+//!
+//! Installing: [`run_param`] checks the params of the `update.run` job (role
+//! `SYSTEM_UPDATE_WRITE`; <https://api.truenas.com/v25.10/api_methods_update.run.html>). It
+//! downloads (progress 0–50) then installs (50–100) and, with `reboot`, restarts the NAS 10 s
+//! after it answers. A pre-check warning fails the job with `EAGAIN`; accepting it means calling
+//! again with `resume` (middlewared TS-25.10.8 `plugins/update_/update.py`).
 
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 use super::reshape::keep_fields_owned;
 
@@ -46,6 +52,40 @@ fn compact_owned(value: Value) -> Result<Value, Value> {
         *new = kept;
     }
     Ok(out)
+}
+
+/// Longest train or version name accepted (TrueNAS uses e.g. `TrueNAS-SCALE-Goldeye`, `25.10.9`).
+const NAME_MAX: usize = 64;
+
+/// A train or version name: letters, digits, `.`, `_`, `-`.
+fn name_ok(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= NAME_MAX
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+/// The params of `update.run`: the browser sends `[{train, version, reboot, resume?}]`; rebuilt
+/// with exactly those keys (never `dataset_name`). `train` and `version` are both required, so
+/// the NAS installs the version the user saw, not whatever is newest by then.
+pub fn run_param(params: &Value) -> Option<Value> {
+    let [Value::Object(attrs)] = params.as_array()?.as_slice() else {
+        return None;
+    };
+    let train = attrs.get("train")?.as_str().filter(|t| name_ok(t))?;
+    let version = attrs.get("version")?.as_str().filter(|v| name_ok(v))?;
+    let reboot = attrs.get("reboot")?.as_bool()?;
+    let resume = match attrs.get("resume") {
+        None => false,
+        Some(r) => r.as_bool()?,
+    };
+    Some(json!([{
+        "train": train,
+        "version": version,
+        "reboot": reboot,
+        "resume": resume,
+    }]))
 }
 
 #[cfg(test)]
@@ -95,6 +135,63 @@ mod tests {
             "error": {"errname": "ENONET", "reason": "no network"},
             "update_download_progress": null});
         assert_eq!(compact(&error).unwrap(), error);
+    }
+
+    #[test]
+    fn restart_required_keeps_its_errname() {
+        let applied = json!({"code": "ERROR", "status": null, "error": {
+            "errname": "EREBOOTREQUIRED",
+            "reason": "System update was already applied, system reboot is required."},
+            "update_download_progress": null});
+        assert_eq!(compact(&applied).unwrap(), applied);
+    }
+
+    #[test]
+    fn run_params_are_rebuilt() {
+        let base = json!({"train": "TrueNAS-SCALE-Goldeye", "version": "25.10.9", "reboot": true});
+        let want = json!([{"train": "TrueNAS-SCALE-Goldeye", "version": "25.10.9",
+            "reboot": true, "resume": false}]);
+        assert_eq!(run_param(&json!([base])), Some(want));
+        let mut extra = base.clone();
+        extra["resume"] = json!(true);
+        extra["dataset_name"] = json!("boot-pool/ROOT/evil");
+        let out = run_param(&json!([extra])).unwrap();
+        assert_eq!(out[0]["resume"], true);
+        assert!(out[0].get("dataset_name").is_none());
+    }
+
+    #[test]
+    fn bad_run_params_are_refused() {
+        let ok = json!({"train": "TrueNAS-SCALE-Goldeye", "version": "25.10.9", "reboot": false});
+        let with = |k: &str, v: Value| {
+            let mut a = ok.clone();
+            a[k] = v;
+            json!([a])
+        };
+        let without = |k: &str| {
+            let mut a = ok.clone();
+            a.as_object_mut().unwrap().remove(k);
+            json!([a])
+        };
+        for bad in [
+            json!([]),
+            json!(ok),
+            json!([ok, ok]),
+            json!(["25.10.9"]),
+            without("train"),
+            without("version"),
+            without("reboot"),
+            with("train", Value::Null),
+            with("version", Value::Null),
+            with("version", json!("")),
+            with("version", json!("25.10.9; reboot")),
+            with("version", json!("../x")),
+            with("train", json!("a".repeat(65))),
+            with("reboot", json!("yes")),
+            with("resume", json!(1)),
+        ] {
+            assert_eq!(run_param(&bad), None, "{bad}");
+        }
     }
 
     #[test]

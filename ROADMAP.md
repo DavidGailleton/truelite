@@ -77,7 +77,7 @@ See and apply TrueNAS updates with progress; reboot/shutdown with typed confirma
 reconnecting state.
 
 - [ ] #40 Show available update and release notes
-- [ ] #41 Apply update with progress
+- [x] #41 Apply update with progress
 - [ ] #42 Reboot and shutdown with typed confirmation
 - [ ] #43 "NAS reconnecting" screen
 
