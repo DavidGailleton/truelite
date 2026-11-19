@@ -50,7 +50,8 @@
 		<AlertsCard onretry={alertTopic.retry} />
 	</div>
 	{#if updateShown}
-		<div class="slot wide" style:order={alertTrouble ? 1 : 0}><UpdateBanner /></div>
+		<!-- After any trouble (alerts 0, pools 1, apps 2), above the everyday cards. -->
+		<div class="slot wide" style:order={3}><UpdateBanner /></div>
 	{/if}
 	<div class="slot" style:order={poolTrouble ? 1 : 4}>
 		<PoolsCard onretry={poolTopics.retry} />
