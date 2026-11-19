@@ -33,13 +33,49 @@ pub fn compact(fields: &Value) -> Option<Value> {
         None => fields.get("status")?,
     };
     status.get("code")?;
-    compact_owned(status.clone()).ok()
+    compact_ref(status)
 }
 
 /// An `update.status` result cut down the same way; a result of another shape is returned
 /// unchanged. The kept values are moved, not cloned.
 pub fn compact_result(result: Value) -> Value {
     compact_owned(result).unwrap_or_else(|v| v)
+}
+
+/// [`compact_owned`] from a borrowed status: only the kept values are cloned, never the
+/// `manifest` (events come at each download progress tick).
+fn compact_ref(value: &Value) -> Option<Value> {
+    let entry = value.as_object()?;
+    let kept: Map<String, Value> = FIELDS
+        .iter()
+        .filter_map(|&k| {
+            let v = match entry.get(k)? {
+                Value::Object(status) if k == "status" => Value::Object(status_ref(status)),
+                v => v.clone(),
+            };
+            Some((k.to_owned(), v))
+        })
+        .collect();
+    Some(Value::Object(kept))
+}
+
+/// `status` cloned with `new_version` cut to [`NEW_VERSION_FIELDS`].
+fn status_ref(status: &Map<String, Value>) -> Map<String, Value> {
+    status
+        .iter()
+        .map(|(k, v)| {
+            let v = match v {
+                Value::Object(new) if k == "new_version" => Value::Object(
+                    NEW_VERSION_FIELDS
+                        .iter()
+                        .filter_map(|&nk| new.get(nk).map(|nv| (nk.to_owned(), nv.clone())))
+                        .collect(),
+                ),
+                v => v.clone(),
+            };
+            (k.clone(), v)
+        })
+        .collect()
 }
 
 fn compact_owned(value: Value) -> Result<Value, Value> {
