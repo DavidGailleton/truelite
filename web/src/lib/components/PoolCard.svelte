@@ -2,7 +2,7 @@
 	// One pool on the Storage page: status in words and colour, usable space, what is wrong, the
 	// scrub line, then its layout (vdevs and disks, plain words), opened when something in it needs
 	// a look. Under the scrub line, its buttons (Check now, Pause, Resume, Stop: #38) for accounts
-	// with the Pool write role.
+	// with the Pool write role. Each disk name links to it on the disks page (#39).
 	import type { ErrorBody } from '#lib/ws.js';
 	import {
 		GROUP_LABELS,
@@ -23,6 +23,7 @@
 		type Vdev
 	} from '#lib/pools.js';
 	import type { Tone } from '#lib/apps.js';
+	import { disksHref } from '#lib/disks.js';
 	import { canScrub } from '#lib/scrub.js';
 	import { session } from '#lib/session.svelte.js';
 	import ScrubActions from './ScrubActions.svelte';
@@ -61,7 +62,11 @@
 		<!-- A lone top-level data disk has no redundancy; inside a vdev, a disk is a member. -->
 		{@const label = top ? vdevLabel(v, group) : null}
 		<li class={['disk', { problem }]}>
-			<span class="name">{v.disk ?? v.name}</span>
+			{#if v.disk}
+				<a class="name" href={disksHref(v.disk)}>{v.disk}</a>
+			{:else}
+				<span class="name">{v.name}</span>
+			{/if}
 			{#if problem}
 				<StatusPill label={problem} tone={GONE.has(v.status) ? 'destructive' : 'warning'} />
 			{:else}
@@ -193,6 +198,22 @@
 	.name {
 		font-family: var(--font-mono);
 		overflow-wrap: anywhere;
+	}
+	a.name {
+		color: inherit;
+		text-decoration: underline;
+		text-decoration-color: var(--border-secondary);
+		text-underline-offset: 0.2em;
+	}
+	a.name:hover {
+		text-decoration-color: currentColor;
+	}
+	@media (pointer: coarse) {
+		a.name {
+			display: inline-flex;
+			align-items: center;
+			min-height: var(--touch);
+		}
 	}
 	.risk {
 		color: var(--warning);

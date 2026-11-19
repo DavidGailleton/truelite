@@ -1,0 +1,39 @@
+[
+  {
+    "identifier": "{serial_lunid}ZA1234_5000c500a1b2c3d4",
+    "name": "sda",
+    "subsystem": "scsi",
+    "number": 2048,
+    "serial": "ZA1234",
+    "lunid": "5000c500a1b2c3d4",
+    "size": 4000787030016,
+    "description": "Left bay",
+    "transfermode": "Auto",
+    "hddstandby": "ALWAYS ON",
+    "advpowermgmt": "DISABLED",
+    "expiretime": null,
+    "model": "ST4000VN008-2DR166",
+    "rotationrate": 7200,
+    "type": "HDD",
+    "zfs_guid": "1234567890",
+    "bus": "ATA",
+    "devname": "/dev/sda",
+    "enclosure": null,
+    "pool": "tank",
+    "passwd": "secret",
+    "kmip_uid": null
+  },
+  {
+    "identifier": "{serial_lunid}S5H7_",
+    "name": "nvme0n1",
+    "serial": "S5H7",
+    "size": 500107862016,
+    "model": "Samsung SSD 980",
+    "rotationrate": null,
+    "type": "SSD",
+    "bus": "UNKNOWN",
+    "devname": "/dev/nvme0n1",
+    "pool": null
+  },
+  "not a disk"
+]

@@ -185,6 +185,16 @@ are cut down the same way (`server/src/truenas/snapshots.rs`): `id`, `dataset`,
 and `created` as seconds since the epoch (from the `creation` property), each left out when
 missing. Ask for those properties with `extra.properties`. A `removed` event has only its `id`.
 
+**`disk.query`, `disk.temperatures`** (call results only; the disks page). TrueNAS sends no
+`disk.query` events and has no temperature event, so the page reads both again. Each disk of a
+`disk.query` result keeps `identifier`, `name`, `serial`, `model`, `size`, `type`,
+`rotationrate`, `bus`, `pool`, `description` (`FIELDS` in `server/src/truenas/disks.rs`):
+`passwd` and `kmip_uid` never reach the browser. Ask with `extra.pools: true`, or `pool` is
+always `null`. `disk.temperatures` (needs `REPORTING_READ`; call it with
+`[[], true]` for the critical limits) comes back as `{name: {temp, crit}}`, both °C or `null`,
+whether TrueNAS sent `n` or `[n, crit]`. `disk.temperature_agg` (`[names, days ≤ 7]`) is
+forwarded as sent: `{name: {min, max, avg}}`. SMART is not in the TrueNAS 25.10 API.
+
 **`app.query`**: app changes (needs `APPS_READ`). TrueNAS sends the whole app on every change:
 its containers, ports and volumes (`active_workloads`), `portals`, the catalog `metadata` and
 `notes`. The server keeps only the fields the web app selects in its own `app.query` call: `id`,

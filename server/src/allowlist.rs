@@ -26,6 +26,14 @@ const METHODS: &[&str] = &[
     // Snapshots page: one dataset's snapshots (SNAPSHOT_READ). Result reshaped by
     // `truenas::snapshots` (properties as numbers).
     "pool.snapshot.query",
+    // Disks page: model, serial, size, pool of each disk (DISK_READ). Result reshaped by
+    // `truenas::disks` (never `passwd`). No event: TrueNAS does not send `disk.query` events.
+    "disk.query",
+    // Disks page: current temperatures with their critical limit (REPORTING_READ). Result
+    // reshaped by `truenas::disks` to `{name: {temp, crit}}`. No event: read again on a timer.
+    "disk.temperatures",
+    // Disks page: 7-day min, max and average temperature per disk (REPORTING_READ).
+    "disk.temperature_agg",
 ];
 
 /// Events the web app may subscribe to, by exact name.

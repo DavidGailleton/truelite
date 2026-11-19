@@ -239,6 +239,9 @@ fn result_reshaper(method: &str) -> Option<fn(Value) -> Value> {
         truenas::snapshots::EVENT | "pool.snapshot.create" => {
             Some(truenas::snapshots::compact_list)
         }
+        // The disks page: never `passwd`/`kmip_uid`; temperatures in one shape.
+        truenas::disks::QUERY => Some(truenas::disks::compact_list),
+        truenas::disks::TEMPERATURES => Some(truenas::disks::compact_temps),
         _ => None,
     }
 }
@@ -829,6 +832,26 @@ mod tests {
         assert_eq!(disk["errors"]["read"], 2);
         assert!(disk.get("stats").is_none() && disk.get("path").is_none());
         assert_eq!(reply["result"][0]["topology"]["cache"], json!([]));
+    }
+
+    /// Issue #39: disks come back without `passwd`; temperatures in one shape; the 7-day
+    /// aggregate as TrueNAS sends it.
+    #[tokio::test]
+    async fn disk_reads_come_back_trimmed() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        let reply = call(&mut ws, 1, "disk.query").await;
+        assert_eq!(
+            reply["result"],
+            json!([{"name": "sda", "serial": "ZA1", "pool": "tank", "rotationrate": 7200}])
+        );
+        let reply = call(&mut ws, 2, "disk.temperatures").await;
+        assert_eq!(
+            reply["result"],
+            json!({"sda": {"temp": 36.0, "crit": 60.0}, "sdb": {"temp": 40.0, "crit": null}})
+        );
+        let reply = call(&mut ws, 3, "disk.temperature_agg").await;
+        assert_eq!(reply["result"]["sda"]["max"], 41);
     }
 
     /// Issue #36: dataset properties come back as plain bytes.

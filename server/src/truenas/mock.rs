@@ -472,6 +472,12 @@ pub fn fake_nas() -> (
                 })
             }
             "pool.snapshot.delete" => Reply::Result(json!(true)),
+            "disk.query" => Reply::Result(json!([{"name": "sda", "serial": "ZA1", "pool": "tank",
+                "rotationrate": 7200, "passwd": "secret", "devname": "/dev/sda"}])),
+            "disk.temperatures" => Reply::Result(json!({"sda": [36, 60], "sdb": 40})),
+            "disk.temperature_agg" => {
+                Reply::Result(json!({"sda": {"min": 30, "max": 41, "avg": 35.5}}))
+            }
             "app.query" => Reply::Result(json!([{"id": "jellyfin", "state": "RUNNING",
                 "active_workloads": {"container_details": [{"id": "c1", "state": "running"}]},
                 "metadata": {"description": "Media server"}}])),

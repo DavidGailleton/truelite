@@ -10,6 +10,7 @@ pub mod apps;
 mod auth;
 mod client;
 pub mod datasets;
+pub mod disks;
 mod error;
 mod events;
 pub mod jobs;

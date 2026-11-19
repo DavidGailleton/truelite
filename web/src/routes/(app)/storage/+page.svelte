@@ -4,8 +4,9 @@
 	// store is shared with the dashboard card); layouts are read here only, again after each pool
 	// change. Under them, the dataset tree with each dataset's space (its own card and store),
 	// each linking to its snapshots (#37). Each pool card can start, pause and stop a data check
-	// (#38). Disk health (#39) comes next.
+	// (#38). "Disks" in the header opens every disk with its temperature (#39).
 	import { cardView } from '#lib/card-state.js';
+	import { disksHref } from '#lib/disks.js';
 	import { connection } from '#lib/nas.svelte.js';
 	import { layouts, poolRowsNow, pools, usePoolLayouts, usePools } from '#lib/pools.svelte.js';
 	import Card from '#lib/components/Card.svelte';
@@ -41,7 +42,11 @@
 	}
 </script>
 
-<PageHeader title="Storage" {subtitle} loading={view.kind === 'loading'} />
+{#snippet headerActions()}
+	<a class="button-outline" href={disksHref()}>Disks</a>
+{/snippet}
+
+<PageHeader title="Storage" {subtitle} loading={view.kind === 'loading'} actions={headerActions} />
 
 {#if view.kind === 'empty'}
 	<EmptyState
