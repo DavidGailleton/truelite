@@ -230,6 +230,8 @@ fn status(topic: &str, status: Status) -> String {
 fn result_reshaper(method: &str) -> Option<fn(Value) -> Value> {
     match method {
         truenas::alerts::EVENT => Some(truenas::alerts::compact_list),
+        // The pools page selects `topology`: names, states and error counts only.
+        truenas::pools::EVENT => Some(truenas::pools::compact_list),
         _ => None,
     }
 }
@@ -807,6 +809,19 @@ mod tests {
             reply,
             json!({"id": 1, "result": [{"uuid": "a1", "level": "WARNING", "formatted": "Disk is hot"}]})
         );
+    }
+
+    /// Issue #35: the pools page's `pool.query` comes back with a compacted topology.
+    #[tokio::test]
+    async fn a_pool_topology_comes_back_without_stats() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        let reply = call(&mut ws, 1, "pool.query").await;
+        let disk = &reply["result"][0]["topology"]["data"][0]["children"][0];
+        assert_eq!(disk["disk"], "sda");
+        assert_eq!(disk["errors"]["read"], 2);
+        assert!(disk.get("stats").is_none() && disk.get("path").is_none());
+        assert_eq!(reply["result"][0]["topology"]["cache"], json!([]));
     }
 
     /// Issue #31: the app detail page asks for one app with a filter and a dotted `select`; both

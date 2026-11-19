@@ -334,3 +334,80 @@ export function poolRows(
 		})
 	);
 }
+
+// ---- Topology (pools page) -------------------------------------------------------------------
+// `pool.query` with `topology` selected; the server cuts each node down to `name`, `type`,
+// `status`, `disk`, `errors` and `children` (`truenas/pools.rs` `compact_topology`). The 25.10
+// docs only name the groups, so every node field is read defensively.
+
+/** `pool.query` params for the pools page's layouts: ids and topology only. */
+export const TOPOLOGY_PARAMS: readonly unknown[] = [[], { select: ['id', 'topology'] }];
+
+export const TOPOLOGY_GROUPS = ['data', 'special', 'dedup', 'log', 'cache', 'spare'] as const;
+export type TopologyGroup = (typeof TOPOLOGY_GROUPS)[number];
+
+export interface DeviceErrors {
+	read: number;
+	write: number;
+	checksum: number;
+}
+
+/** A vdev (mirror, RAIDZ, …) or a disk. */
+export interface Vdev {
+	name: string;
+	/** `DISK`, `MIRROR`, `RAIDZ1`, `REPLACING`, … upper case. */
+	type: string;
+	/** `ONLINE`, `DEGRADED`, `OFFLINE`, `AVAIL` (spare), … upper case. */
+	status: string;
+	/** The disk's device name (`sda`), for disks. */
+	disk: string | null;
+	errors: DeviceErrors;
+	children: Vdev[];
+}
+
+export type Topology = Record<TopologyGroup, Vdev[]>;
+
+const count = (v: unknown) => (isNum(v) && v > 0 ? Math.floor(v) : 0);
+
+/** One topology node, or `null` when it lacks a name. */
+export function parseVdev(raw: unknown): Vdev | null {
+	if (!isObj(raw) || !isStr(raw.name)) return null;
+	const errors = isObj(raw.errors) ? raw.errors : {};
+	return {
+		name: raw.name,
+		type: isStr(raw.type) ? raw.type.toUpperCase() : 'UNKNOWN',
+		status: isStr(raw.status) ? raw.status.toUpperCase() : 'UNKNOWN',
+		disk: strOrNull(raw.disk),
+		errors: {
+			read: count(errors.read),
+			write: count(errors.write),
+			checksum: count(errors.checksum)
+		},
+		children: Array.isArray(raw.children)
+			? raw.children.map(parseVdev).filter((v): v is Vdev => v !== null)
+			: []
+	};
+}
+
+/** A pool's `topology`, or `null` when there is none (TrueNAS sends `null` when unavailable). */
+export function parseTopology(raw: unknown): Topology | null {
+	if (!isObj(raw)) return null;
+	const groups = {} as Topology;
+	for (const g of TOPOLOGY_GROUPS) {
+		const list = raw[g];
+		groups[g] = Array.isArray(list) ? list.map(parseVdev).filter((v): v is Vdev => v !== null) : [];
+	}
+	return groups;
+}
+
+/** The `pool.query` result of `TOPOLOGY_PARAMS`, by pool id; `null` when it isn't a list. */
+export function parseTopologies(raw: unknown): Map<number, Topology> | null {
+	if (!Array.isArray(raw)) return null;
+	const out = new Map<number, Topology>();
+	for (const p of raw) {
+		if (!isObj(p) || !isNum(p.id)) continue;
+		const t = parseTopology(p.topology);
+		if (t) out.set(p.id, t);
+	}
+	return out;
+}

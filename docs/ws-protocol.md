@@ -129,6 +129,12 @@ own `pool.query` call: `id`, `name`, `status`, `healthy`, `warning`, `status_cod
 `status_detail`, `size`, `allocated`, `free`, `scan` (the list is `FIELDS` in
 `server/src/truenas/pools.rs`). A `removed` event has only its `id`.
 
+The `pool.query` **call** passes through as the NAS sends it, except `topology` when the call
+selects it (the pools page does): each of its six groups (`data`, `log`, `cache`, `spare`,
+`special`, `dedup`) keeps, per node, `name`, `type`, `status`, `disk` (disks only),
+`errors: {read, write, checksum}` and `children` (same shape, nested at most 6 deep). `stats`,
+`path` and `guid` are dropped. `topology` is `null` when TrueNAS has none.
+
 `pool.scan` (scrub and resilver progress, `POOL_SCRUB_READ`) is small and forwarded as it is:
 `fields` = `{"name": "tank", "scan": {…}}`, the same `scan` object as in `pool.query`.
 

@@ -1,22 +1,26 @@
 // Svelte binding of the pools: the list follows `pool.query` events, scrub and resilver progress
 // follows `pool.scan`, and usable space comes from the root datasets, read again when a pool
-// changes or the page comes back after a while. No timer polling.
+// changes or the page comes back after a while. No timer polling. The pools page also follows
+// each pool's layout (`topology`), read only while that page is mounted.
 import { untrack } from 'svelte';
 import { nas, onNasClose, pageVisible, useTopic } from './nas.svelte';
 import {
 	DATASET_QUERY,
 	POOL_QUERY,
+	TOPOLOGY_PARAMS,
 	POOL_SCAN,
 	POOL_SELECT,
 	applyPoolEvent,
 	applyScan,
 	parsePools,
 	parseRootUsage,
+	parseTopologies,
 	poolRows,
 	rootUsageParams,
 	type Pool,
 	type PoolRow,
-	type RootUsage
+	type RootUsage,
+	type Topology
 } from './pools';
 import { NasError, needsRefetch, shownError, type ErrorBody, type TopicMessage } from './ws';
 
@@ -35,6 +39,20 @@ export const pools = $state<{
 	/** The account can't read datasets: raw space is all there is. */
 	usageDenied: boolean;
 }>({ list: null, usage: new Map(), error: null, usageDenied: false });
+
+/** Pool layouts, by pool id: the pools page only. */
+export const layouts = $state<{
+	/** `null` until the first answer. */
+	map: ReadonlyMap<number, Topology> | null;
+	/** Why the last read failed; `null` after a success. */
+	error: ErrorBody | null;
+}>({ map: null, error: null });
+
+/** Mounted pools pages; layouts are read only while there is one. */
+let layoutWanted = 0;
+let layoutRequest = 0;
+let layoutAt = 0;
+let layoutTimer: ReturnType<typeof setTimeout> | undefined;
 
 let listRequest = 0;
 let usageRequest = 0;
@@ -57,6 +75,11 @@ onNasClose(() => {
 	pools.usage = new Map();
 	pools.error = null;
 	pools.usageDenied = false;
+	layoutRequest++;
+	clearTimeout(layoutTimer);
+	layoutAt = 0;
+	layouts.map = null;
+	layouts.error = null;
 });
 
 /** Queries the pool list, then their usable space. */
@@ -74,6 +97,7 @@ export function loadPools(): void {
 			pools.list = list;
 			pools.error = null;
 			loadUsage();
+			if (layoutWanted > 0) loadLayouts();
 		})
 		.catch((e: unknown) => {
 			if (mine !== listRequest) return;
@@ -103,6 +127,33 @@ function loadUsage(): void {
 		});
 }
 
+/** Queries every pool's layout (compacted by the server). */
+function loadLayouts(): void {
+	clearTimeout(layoutTimer);
+	const mine = ++layoutRequest;
+	nas()
+		.call(POOL_QUERY, [...TOPOLOGY_PARAMS])
+		.then((raw) => {
+			if (mine !== layoutRequest) return;
+			const map = parseTopologies(raw);
+			if (!map) {
+				layouts.error = {
+					code: 'bad_request',
+					message: "The NAS sent pool layouts truelite can't read."
+				};
+				return;
+			}
+			layouts.map = map;
+			layouts.error = null;
+			layoutAt = performance.now();
+		})
+		.catch((e: unknown) => {
+			if (mine !== layoutRequest) return;
+			const error = shownError(e);
+			if (error) layouts.error = error;
+		});
+}
+
 function loadUsageSoon(): void {
 	clearTimeout(usageTimer);
 	usageTimer = setTimeout(loadUsage, USAGE_DEBOUNCE_MS);
@@ -118,6 +169,11 @@ function onPoolMessage(message: TopicMessage): void {
 		}
 		pools.list = next;
 		if (message.data.kind !== 'removed') loadUsageSoon();
+		// Events carry no topology (`truenas/pools.rs`): read the layouts again, debounced.
+		if (layoutWanted > 0 && message.data.kind !== 'removed') {
+			clearTimeout(layoutTimer);
+			layoutTimer = setTimeout(loadLayouts, USAGE_DEBOUNCE_MS);
+		}
 	} else if (message.status === 'ended') {
 		pools.error = message.error;
 	} else if (needsRefetch(message)) {
@@ -152,6 +208,44 @@ export function usePools(): { retry(): void } {
 			pools.error = null;
 			list.retry();
 			scan.retry();
+		}
+	};
+}
+
+/**
+ * Asks for the pool layouts until the returned release is called: reads them now when the pool
+ * list is already known (from the dashboard) and they are missing or old; otherwise `loadPools`
+ * reads them once the list arrives. Plain function so tests can drive it without a component.
+ */
+export function wantLayouts(): () => void {
+	layoutWanted++;
+	if (pools.list && (!layouts.map || performance.now() - layoutAt > USAGE_STALE_MS)) {
+		loadLayouts();
+	}
+	let released = false;
+	return () => {
+		if (released) return;
+		released = true;
+		if (--layoutWanted === 0) clearTimeout(layoutTimer);
+	};
+}
+
+/**
+ * Follows the pool layouts while the calling component (the pools page) is mounted, next to
+ * {@link usePools}. Call from component setup. `retry()` reads them again after an error.
+ */
+export function usePoolLayouts(): { retry(): void } {
+	$effect(() => untrack(wantLayouts));
+	$effect(() => {
+		if (!pageVisible()) return;
+		untrack(() => {
+			if (layouts.map && performance.now() - layoutAt > USAGE_STALE_MS) loadLayouts();
+		});
+	});
+	return {
+		retry: () => {
+			layouts.error = null;
+			loadLayouts();
 		}
 	};
 }

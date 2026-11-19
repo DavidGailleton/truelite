@@ -65,7 +65,7 @@ List, inspect, follow logs, then start/stop/restart/upgrade apps with confirmati
 
 Pools, datasets, snapshots, scrubs, disks and SMART. Destructive actions need typed confirmation.
 
-- [ ] #35 Pools page
+- [x] #35 Pools page
 - [ ] #36 Dataset tree with usage
 - [ ] #37 Snapshots: list, create, delete
 - [ ] #38 Scrub status and start

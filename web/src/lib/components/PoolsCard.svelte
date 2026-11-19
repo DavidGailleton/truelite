@@ -3,12 +3,11 @@
 	// bar and the scrub/resilver line. The dashboard calls usePools(); this renders the state.
 	import { cardView } from '#lib/card-state.js';
 	import { connection } from '#lib/nas.svelte.js';
-	import { FULL_CRITICAL, FULL_WARNING } from '#lib/pools.js';
 	import { poolRowsNow, pools } from '#lib/pools.svelte.js';
-	import { formatBytes, formatPercent } from '#lib/realtime.js';
 	import Card from './Card.svelte';
 	import CardBadge from './CardBadge.svelte';
 	import CardNotice from './CardNotice.svelte';
+	import UsageBar from './UsageBar.svelte';
 
 	let { onretry }: { onretry: () => void } = $props();
 
@@ -22,12 +21,14 @@
 			status: connection.status
 		})
 	);
-
-	const fill = (percent: number) =>
-		percent >= FULL_CRITICAL ? 'critical' : percent >= FULL_WARNING ? 'warning' : 'ok';
 </script>
 
-{#snippet badge()}<CardBadge {view} />{/snippet}
+{#snippet badge()}
+	<span class="header-end">
+		<CardBadge {view} />
+		{#if view.kind === 'ready'}<a class="all" href="/storage">See all</a>{/if}
+	</span>
+{/snippet}
 
 <Card title="Storage" icon="hard-drive" control={badge}>
 	<CardNotice
@@ -48,23 +49,7 @@
 							<span class="dot" aria-hidden="true"></span>{row.health.label}
 						</span>
 					</div>
-					{#if row.usage}
-						<div
-							class="bar"
-							role="meter"
-							aria-label="Space used on {row.name}"
-							aria-valuemin={0}
-							aria-valuemax={100}
-							aria-valuenow={Math.round(row.usage.percent)}
-						>
-							<span class={fill(row.usage.percent)} style:width="{row.usage.percent}%"></span>
-						</div>
-						<p class="context">
-							{formatBytes(row.usage.used)} used of {formatBytes(row.usage.total)} · {formatPercent(
-								row.usage.percent
-							)}{#if row.usage.raw}<span title="Raw disk space, parity included"> (raw)</span>{/if}
-						</p>
-					{/if}
+					{#if row.usage}<UsageBar usage={row.usage} name={row.name} />{/if}
 					{#if row.health.detail}<p class="detail">{row.health.detail}</p>{/if}
 					{#if row.scan}<p class="context">{row.scan}</p>{/if}
 				</li>
@@ -97,6 +82,18 @@
 	}
 	.dim {
 		opacity: 0.5;
+	}
+	.header-end {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+	.all {
+		color: var(--text-secondary);
+		font-size: var(--text-sm);
+	}
+	.all:hover {
+		color: var(--text-primary);
 	}
 
 	.pools {
@@ -152,24 +149,9 @@
 		color: var(--destructive);
 	}
 
-	.bar {
-		display: flex;
-		height: 0.5rem;
-		overflow: hidden;
-		border-radius: var(--radius-full);
-		background: var(--chart-track);
-	}
-	.bar .ok {
-		background: var(--chart-primary);
-	}
-	.bar .warning {
-		background: var(--warning);
-	}
-	.bar .critical {
-		background: var(--destructive);
-	}
-
 	.skeleton.bar {
 		display: block;
+		height: 0.5rem;
+		border-radius: var(--radius-full);
 	}
 </style>

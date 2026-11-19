@@ -452,6 +452,10 @@ pub fn fake_nas() -> (
             "system.info" => Reply::Result(json!({"hostname": "truenas"})),
             "alert.list" => Reply::Result(json!([{"uuid": "a1", "level": "WARNING",
                 "formatted": "Disk is hot", "args": {"disk": "sda"}, "mail": {"status": "sent"}}])),
+            "pool.query" => Reply::Result(json!([{"id": 1, "name": "tank", "topology": {"data": [
+                {"name": "mirror-0", "type": "MIRROR", "status": "ONLINE", "children": [
+                    {"name": "sda1", "type": "DISK", "status": "ONLINE", "disk": "sda",
+                     "path": "/dev/sda1", "stats": {"read_errors": 2, "ops": [0, 1]}, "children": []}]}]}}])),
             "app.query" => Reply::Result(json!([{"id": "jellyfin", "state": "RUNNING",
                 "active_workloads": {"container_details": [{"id": "c1", "state": "running"}]},
                 "metadata": {"description": "Media server"}}])),
