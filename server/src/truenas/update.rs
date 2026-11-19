@@ -15,8 +15,6 @@
 
 use serde_json::{Map, Value, json};
 
-use super::reshape::keep_fields_owned;
-
 /// The event and method name, as the browser subscribes to or calls it.
 pub const EVENT: &str = "update.status";
 
@@ -37,13 +35,13 @@ pub fn compact(fields: &Value) -> Option<Value> {
 }
 
 /// An `update.status` result cut down the same way; a result of another shape is returned
-/// unchanged. The kept values are moved, not cloned.
+/// unchanged. Goes through [`compact_ref`] too, so the `manifest` is dropped, never cloned.
 pub fn compact_result(result: Value) -> Value {
-    compact_owned(result).unwrap_or_else(|v| v)
+    compact_ref(&result).unwrap_or(result)
 }
 
-/// [`compact_owned`] from a borrowed status: only the kept values are cloned, never the
-/// `manifest` (events come at each download progress tick).
+/// A status object cut to [`FIELDS`], from a borrow: only the kept values are cloned, never the
+/// `manifest` (events come at each download progress tick); `None` when it is not an object.
 fn compact_ref(value: &Value) -> Option<Value> {
     let entry = value.as_object()?;
     let kept: Map<String, Value> = FIELDS
@@ -76,18 +74,6 @@ fn status_ref(status: &Map<String, Value>) -> Map<String, Value> {
             (k.clone(), v)
         })
         .collect()
-}
-
-fn compact_owned(value: Value) -> Result<Value, Value> {
-    let mut out = keep_fields_owned(value, FIELDS)?;
-    if let Some(Value::Object(new)) = out.pointer_mut("/status/new_version") {
-        let kept: Map<String, Value> = NEW_VERSION_FIELDS
-            .iter()
-            .filter_map(|&k| new.remove(k).map(|v| (k.to_owned(), v)))
-            .collect();
-        *new = kept;
-    }
-    Ok(out)
 }
 
 /// Longest train or version name accepted (TrueNAS uses e.g. `TrueNAS-SCALE-Goldeye`, `25.10.9`).
