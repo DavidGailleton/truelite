@@ -6,10 +6,11 @@
 	// name), then the job's progress; a pre-check warning asks again before going on.
 	import { cardView } from '#lib/card-state.js';
 	import { connection } from '#lib/nas.svelte.js';
+	import { powerBusy } from '#lib/power.svelte.js';
 	import { session } from '#lib/session.svelte.js';
 	import { versionLabel } from '#lib/system.js';
 	import { system } from '#lib/system.svelte.js';
-	import { canInstallUpdates } from '#lib/update.js';
+	import { canInstallUpdates, INSTALL_PERCENT } from '#lib/update.js';
 	import { update } from '#lib/update.svelte.js';
 	import {
 		dismissUpdateRun,
@@ -36,12 +37,21 @@
 	const hostname = $derived(system.info?.hostname ?? null);
 
 	const run = $derived(updateRun.run);
+	// The NAS name is needed: restarting asks for it to be typed. Nothing installs while a
+	// restart or shutdown is under way.
 	const canInstall = $derived(
 		status?.kind === 'available' &&
 			view.kind === 'ready' &&
 			!view.paused &&
+			hostname !== null &&
 			!updateBusy() &&
+			!powerBusy() &&
 			canInstallUpdates(session.user?.roles)
+	);
+	const runLabel = $derived(
+		run?.phase === 'running' && (run.progress?.percent ?? 0) >= INSTALL_PERCENT
+			? 'Installing the update…'
+			: 'Downloading the update…'
 	);
 
 	/** The version the open dialog offers; confirming installs that one, nothing newer. */
@@ -138,7 +148,7 @@
 				{/if}
 			{/if}
 			{#if run?.phase === 'running'}
-				<JobProgress progress={run.progress} label="Downloading the update…" />
+				<JobProgress progress={run.progress} label={runLabel} />
 			{:else if run?.phase === 'restarting'}
 				<p class="note" role="status">
 					Installed. The NAS restarts in a few seconds and is away for a few minutes; log in again
@@ -168,13 +178,13 @@
 	{/if}
 </Card>
 
-{#if asking !== null}
+{#if asking !== null && hostname !== null}
 	<ConfirmDialog
 		title="Install {versionLabel(asking)}?"
 		text="The NAS downloads the update, then installs it. Apps and shares keep running until the restart; the NAS is unreachable for a few minutes while it restarts."
 		confirm={reboot ? 'Install and restart' : 'Install'}
 		destructive={reboot}
-		typeToConfirm={reboot ? (hostname ?? undefined) : undefined}
+		typeToConfirm={reboot && hostname !== null ? hostname : undefined}
 		onconfirm={confirmInstall}
 		oncancel={() => (asking = null)}
 	>
