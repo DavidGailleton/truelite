@@ -174,9 +174,9 @@ async fn log_in_reconnect_and_log_out() {
     let mut ws = j.open(&cookie).await;
     let info = call(&mut ws, 1, "system.info").await;
     assert_eq!(info, json!({"id": 1, "result": {"hostname": "truenas"}}));
-    let refused = call(&mut ws, 2, "system.reboot").await;
+    let refused = call(&mut ws, 2, "user.delete").await;
     assert_eq!(refused["error"]["code"], "not_allowed", "{refused}");
-    assert!(!j.nas_saw("system.reboot"));
+    assert!(!j.nas_saw("user.delete"));
 
     // An event subscription delivers what the NAS sends.
     send(&mut ws, json!({"op": "sub", "topic": "alert.list"})).await;

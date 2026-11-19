@@ -1,6 +1,7 @@
 <script lang="ts">
-	// System page: updates (#40); reboot and shutdown come with #42.
+	// System page: updates (#40, #41), restart and shut down (#42).
 	import PageHeader from '#lib/components/PageHeader.svelte';
+	import PowerCard from '#lib/components/PowerCard.svelte';
 	import UpdateCard from '#lib/components/UpdateCard.svelte';
 	import { useSystemInfo } from '#lib/system.svelte.js';
 	import { useUpdateStatus } from '#lib/update.svelte.js';
@@ -13,6 +14,7 @@
 
 <div class="grid">
 	<UpdateCard onretry={updateTopic.retry} />
+	<PowerCard />
 </div>
 
 <style>

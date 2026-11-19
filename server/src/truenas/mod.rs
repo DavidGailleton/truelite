@@ -22,6 +22,7 @@ mod reshape;
 mod rpc;
 mod session;
 pub mod snapshots;
+pub mod system;
 mod tls;
 pub mod update;
 

@@ -73,6 +73,11 @@ TrueNAS jobs (`JOB_METHODS` in `server/src/allowlist.rs`). The app jobs need `AP
   after the reply. A pre-check warning fails the job with `errname` `EAGAIN` and the warning as
   the message: call again with `resume: true` to accept it. Without `reboot`, `update.status`
   then reports `code: ERROR`, `errname` `EREBOOTREQUIRED`. `update.download` is not allowed.
+- `system.reboot`, `system.shutdown` (`FULL_ADMIN`): `[]`; sent as `["Requested from truelite",
+  {"delay": null}]` (the reason in the NAS audit log is truelite's, never the browser's). The
+  job runs the restart or power-off itself, so the reply may never come: the link drops
+  (`reconnecting`, then `logged_out` once the NAS is back, as its tokens are gone). Treat a
+  `result` and a dropped link alike as "the NAS is going down".
 
 The server follows the job on the NAS and sends its progress under the call's `id` until the
 reply:

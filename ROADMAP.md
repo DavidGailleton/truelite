@@ -76,9 +76,9 @@ Pools, datasets, snapshots, scrubs, disks and SMART. Destructive actions need ty
 See and apply TrueNAS updates with progress; reboot/shutdown with typed confirmation; clear
 reconnecting state.
 
-- [ ] #40 Show available update and release notes
+- [x] #40 Show available update and release notes
 - [x] #41 Apply update with progress
-- [ ] #42 Reboot and shutdown with typed confirmation
+- [x] #42 Reboot and shutdown with typed confirmation
 - [ ] #43 "NAS reconnecting" screen
 
 ## Phase 7 — PWA + polish

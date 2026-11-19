@@ -125,6 +125,11 @@ const JOB_METHODS: &[(&str, ActionCheck)] = &[
     // resume}]`: the version shown is pinned; `reboot` restarts the NAS once installed (no
     // FULL_ADMIN needed, TrueNAS calls `system.reboot` itself).
     ("update.run", crate::truenas::update::run_param),
+    // System page: Restart and Shut down, after typing the NAS name (FULL_ADMIN). Params `[]`;
+    // the reason in the NAS audit log is fixed by truelite. The reply may never come: the link
+    // drops as the NAS goes down.
+    ("system.reboot", crate::truenas::system::power_param),
+    ("system.shutdown", crate::truenas::system::power_param),
 ];
 
 /// Actions that are plain calls (no job): each with the check that rebuilds its params. The
@@ -261,6 +266,21 @@ mod tests {
                 "{near:?}"
             );
         }
+        assert!(a.job("system.reboot").is_some() && a.job("system.shutdown").is_some());
+        for near in [
+            "system",
+            "system.reboot.info",
+            "system.halt",
+            "system.poweroff",
+            "system.reboot.",
+            "System.reboot",
+        ] {
+            assert!(
+                a.job(near).is_none() && a.action(near).is_none() && !a.method(near),
+                "{near:?}"
+            );
+        }
+        assert!(!a.method("system.reboot") && !a.method("system.shutdown"));
         assert!(a.event("alert").is_none());
         assert!(a.event("reporting.realtime:{\"interval\": 2}").is_none());
         assert!(!a.method(""));

@@ -785,7 +785,7 @@ mod tests {
         let h = Harness::new().await;
         let mut ws = h.open().await;
         // `fast` exists on the fake NAS, `pool.create` would be an action: both stay here.
-        for (id, method) in [(7, "pool.create"), (8, "fast"), (9, "system.reboot")] {
+        for (id, method) in [(7, "pool.create"), (8, "fast"), (9, "user.delete")] {
             let reply = call(&mut ws, id, method).await;
             assert_eq!(reply["id"], id);
             assert_eq!(reply["error"]["code"], "not_allowed", "{reply}");
@@ -794,7 +794,7 @@ mod tests {
         assert_eq!(call(&mut ws, 10, "system.info").await["id"], 10);
         let seen = h.methods();
         assert!(seen.contains(&"system.info".to_owned()));
-        for m in ["pool.create", "fast", "system.reboot"] {
+        for m in ["pool.create", "fast", "user.delete"] {
             assert!(!seen.contains(&m.to_owned()), "{m} reached the NAS");
         }
     }
@@ -1219,6 +1219,51 @@ mod tests {
             [
                 json!([{"train": "TrueNAS-SCALE-Goldeye", "version": "25.10.9",
                 "reboot": true, "resume": false}])
+            ]
+        );
+    }
+
+    /// #42: restart and shut down are jobs with no browser params; truelite sets the reason.
+    #[tokio::test]
+    async fn system_power_goes_upstream_rebuilt() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        for (id, params) in (1..).zip([json!(["evil reason"]), json!([{"delay": 0}]), json!({})]) {
+            send(
+                &mut ws,
+                json!({"op": "call", "id": id, "method": "system.reboot", "params": params}),
+            )
+            .await;
+            assert_eq!(next(&mut ws).await["error"]["code"], "bad_request");
+        }
+        send(
+            &mut ws,
+            json!({"op": "call", "id": 5, "method": "system.reboot.info", "params": []}),
+        )
+        .await;
+        assert_eq!(next(&mut ws).await["error"]["code"], "not_allowed");
+        for (id, method) in [(6, "system.reboot"), (7, "system.shutdown")] {
+            send(
+                &mut ws,
+                json!({"op": "call", "id": id, "method": method, "params": []}),
+            )
+            .await;
+            assert_eq!(next(&mut ws).await["progress"]["percent"], 50);
+            assert_eq!(next(&mut ws).await, json!({"id": id, "result": null}));
+        }
+        let sent: Vec<(String, Value)> = h
+            .mock
+            .requests()
+            .into_iter()
+            .filter(|c| c.method.starts_with("system.reboot") || c.method == "system.shutdown")
+            .map(|c| (c.method, c.params))
+            .collect();
+        let params = json!(["Requested from truelite", {"delay": null}]);
+        assert_eq!(
+            sent,
+            [
+                ("system.reboot".to_owned(), params.clone()),
+                ("system.shutdown".to_owned(), params),
             ]
         );
     }

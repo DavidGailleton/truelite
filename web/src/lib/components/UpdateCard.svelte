@@ -119,7 +119,9 @@
 			{#if status.kind === 'current'}
 				<p class="context">TrueNAS is up to date.</p>
 			{:else if status.kind === 'restart'}
-				<p class="context">An update is installed. Restart the NAS to finish.</p>
+				<p class="context">
+					An update is installed. Restart the NAS to finish, from the Power card.
+				</p>
 			{:else if status.kind === 'error'}
 				<p class="context">{status.error}</p>
 			{:else}
