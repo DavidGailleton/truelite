@@ -455,6 +455,12 @@ export class NasSocket {
 			clearTimeout(this.#stableTimer);
 			this.#stableTimer = null;
 		}
+		// The session ended (logged out, expired, NAS session gone): every call ends with
+		// `logged_out`, not `disconnected`, so nothing reads it as the NAS going down.
+		if (code === CLOSE_LOGGED_OUT) {
+			this.#loggedOut();
+			return;
+		}
 		// Calls written to the dead socket may have run: reject, never resend.
 		this.#rejectAll(
 			() =>
@@ -464,10 +470,6 @@ export class NasSocket {
 				}),
 			true
 		);
-		if (code === CLOSE_LOGGED_OUT) {
-			this.#loggedOut();
-			return;
-		}
 		this.#setStatus('offline');
 		if (reachedUp) {
 			this.#scheduleRetry();

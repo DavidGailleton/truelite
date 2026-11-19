@@ -31,8 +31,8 @@ onNasClose(() => {
 	updateRun.run = null;
 });
 
-// The wait ended without a new session (the NAS is back, or the user stopped waiting): the card
-// no longer says it restarts. `update.status` then tells what got installed.
+// The wait ended without a new session, whatever the reason (an update wait is never a guess):
+// the card no longer says it restarts. `update.status` then tells what got installed.
 onRestartEnd(() => {
 	if (updateRun.run?.phase !== 'restarting') return;
 	generation++;
@@ -88,7 +88,7 @@ function run(status: UpdateStatus, reboot: boolean, resume: boolean): void {
 			() => {
 				if (mine !== generation) return;
 				updateRun.run = reboot ? { phase: 'restarting' } : { phase: 'installed' };
-				if (reboot) waitForRestart();
+				if (reboot) waitForRestart(false);
 				else loadUpdateStatus();
 			},
 			(e: unknown) => {
@@ -100,13 +100,14 @@ function run(status: UpdateStatus, reboot: boolean, resume: boolean): void {
 						: end.kind === 'restarting'
 							? { phase: 'restarting' }
 							: { phase: 'failed', message: end.message };
-				if (end.kind === 'restarting') waitForRestart();
+				if (end.kind === 'restarting') waitForRestart(true);
 			}
 		);
 }
 
-function waitForRestart(): void {
-	beginRestartWait('reboot', system.info?.hostname ?? null);
+/** `viaDrop`: truelite's link to the NAS dropped, so the NAS is already seen down. */
+function waitForRestart(viaDrop: boolean): void {
+	beginRestartWait('reboot', system.info?.hostname ?? null, { down: viaDrop });
 }
 
 /** Forgets a failed run, a declined warning or an "installed" note. */

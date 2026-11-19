@@ -2,7 +2,7 @@
 // Cleared on logout (once the NAS is back, its old session is gone and the user logs in again).
 // The wording and the outcome rules live in power.ts.
 import { nas, onNasClose } from './nas.svelte';
-import { powerCall, powerOutcome, type PowerAction } from './power';
+import { POWER_TEXT, powerCall, powerOutcome, type PowerAction } from './power';
 import { beginRestartWait, onRestartEnd } from './restart.svelte';
 import { system } from './system.svelte';
 import { failure } from './ws';
@@ -22,12 +22,14 @@ onNasClose(() => {
 	power.run = null;
 });
 
-// The wait ended without a new session: the NAS came back, never went down, or the user stopped
-// waiting. Either way nothing is going down any more.
-onRestartEnd(() => {
+// The wait ended without a new session: the NAS came back, the wait expired, or the user stopped
+// waiting: nothing is going down any more. A NAS that never went down gets a failure note.
+onRestartEnd((reason) => {
 	if (power.run?.phase !== 'going-down') return;
+	const { action } = power.run;
 	generation++;
-	power.run = null;
+	power.run =
+		reason === 'not-down' ? { phase: 'failed', message: POWER_TEXT[action].notDown } : null;
 });
 
 /** Whether a restart or shutdown is under way (so nothing else starts). */
@@ -48,7 +50,12 @@ export function startPower(action: PowerAction): void {
 		const outcome = powerOutcome(action, error);
 		if (outcome.kind === 'going-down') {
 			power.run = { phase: 'going-down', action };
-			beginRestartWait(action, system.info?.hostname ?? null);
+			// Only the browser's own link dropping is a guess; the NAS's link dropping
+			// (`reconnecting`) means it is already down.
+			beginRestartWait(action, system.info?.hostname ?? null, {
+				guess: error?.code === 'disconnected',
+				down: error?.code === 'reconnecting'
+			});
 		} else {
 			power.run = { phase: 'failed', message: outcome.message };
 		}

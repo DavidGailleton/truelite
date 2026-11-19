@@ -20,12 +20,17 @@ vi.mock('./nas.svelte', async (actual) => ({
 
 const { dismissPower, power, powerBusy, startPower } = await import('./power.svelte');
 const { closeNas } = await import('./nas.svelte');
+const { endRestartWait, restart } = await import('./restart.svelte');
+const { POWER_TEXT } = await import('./power');
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
 	pending.length = 0;
 });
-afterEach(() => closeNas());
+afterEach(() => {
+	closeNas();
+	endRestartWait();
+});
 
 describe('power runs', () => {
 	it('restart once, with no timeout, and go down on the reply', async () => {
@@ -46,6 +51,47 @@ describe('power runs', () => {
 		pending[0].reject(new NasError({ code: 'reconnecting', message: 'x' }));
 		await settle();
 		expect(power.run).toEqual({ phase: 'going-down', action: 'shutdown' });
+		expect(restart.wait).toMatchObject({ kind: 'shutdown', guess: false, down: true });
+	});
+
+	it('wait for sure, not yet seen down, on a reply', async () => {
+		startPower('reboot');
+		pending[0].resolve(null);
+		await settle();
+		expect(restart.wait).toMatchObject({ kind: 'reboot', guess: false, down: false });
+	});
+
+	it('only guess when the browser link drops', async () => {
+		startPower('reboot');
+		pending[0].reject(new NasError({ code: 'disconnected', message: 'x' }));
+		await settle();
+		expect(power.run).toEqual({ phase: 'going-down', action: 'reboot' });
+		expect(restart.wait).toMatchObject({ kind: 'reboot', guess: true, down: false });
+	});
+
+	it('fail with a plain note when the NAS never went down', async () => {
+		startPower('reboot');
+		pending[0].reject(new NasError({ code: 'disconnected', message: 'x' }));
+		await settle();
+		endRestartWait('not-down');
+		expect(power.run).toEqual({ phase: 'failed', message: POWER_TEXT.reboot.notDown });
+		expect(powerBusy()).toBe(false);
+	});
+
+	it('are over once the NAS is back', async () => {
+		startPower('shutdown');
+		pending[0].resolve(null);
+		await settle();
+		endRestartWait('back');
+		expect(power.run).toBeNull();
+	});
+
+	it('do not wait when the session ends first', async () => {
+		startPower('reboot');
+		pending[0].reject(new NasError({ code: 'logged_out', message: 'x' }));
+		await settle();
+		expect(power.run?.phase).toBe('failed');
+		expect(restart.wait).toBeNull();
 	});
 
 	it('show a failure until dismissed', async () => {

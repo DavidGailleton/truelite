@@ -24,21 +24,31 @@ export const canPower = (roles: readonly string[] | undefined) => hasRole(roles,
 /** The words of each action: the button, the dialog, and the note once the NAS goes down. */
 export const POWER_TEXT: Record<
 	PowerAction,
-	{ button: string; title: string; text: string; goingDown: string; error: string }
+	{
+		button: string;
+		title: string;
+		text: string;
+		goingDown: string;
+		error: string;
+		/** The NAS never went down after all. */
+		notDown: string;
+	}
 > = {
 	reboot: {
 		button: 'Restart',
 		title: 'Restart',
 		text: 'Apps, shares and VMs stop. The NAS is unreachable for a few minutes; then log in again.',
 		goingDown: 'Restarting. Log in again when the NAS is back, in a few minutes.',
-		error: "Couldn't restart the NAS"
+		error: "Couldn't restart the NAS",
+		notDown: "The NAS didn't restart. It's still running; try again."
 	},
 	shutdown: {
 		button: 'Shut down',
 		title: 'Shut down',
 		text: "Apps, shares and VMs stop. The NAS stays off until someone powers it on: truelite can't turn it back on.",
 		goingDown: 'Shutting down. The NAS stays off until someone powers it on.',
-		error: "Couldn't shut down the NAS"
+		error: "Couldn't shut down the NAS",
+		notDown: "The NAS didn't shut down. It's still running; try again."
 	}
 };
 

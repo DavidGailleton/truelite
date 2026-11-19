@@ -317,7 +317,7 @@ describe('session end', () => {
 		last().serverClose(CLOSE_LOGGED_OUT);
 
 		expect(statuses.at(-1)).toBe('logged-out');
-		expect(await pending).toMatchObject({ code: 'disconnected' });
+		expect(await pending).toMatchObject({ code: 'logged_out' });
 		expect(got).toEqual([
 			{ status: 'ended', error: expect.objectContaining({ code: 'logged_out' }) }
 		]);

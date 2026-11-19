@@ -5,8 +5,8 @@
 	import AppShell from '#lib/components/AppShell.svelte';
 	import RestartScreen from '#lib/components/RestartScreen.svelte';
 	import { connection, nas } from '#lib/nas.svelte.js';
-	import { restartLoginUrl } from '#lib/restart.js';
-	import { endRestartWait, restart } from '#lib/restart.svelte.js';
+	import { restartLoginUrl, statusSignal } from '#lib/restart.js';
+	import { endRestartWait, restart, useRestartWatch } from '#lib/restart.svelte.js';
 	import { endSession, loadSession, session } from '#lib/session.svelte.js';
 	import type { LayoutProps } from './$types';
 
@@ -31,17 +31,10 @@
 		nas();
 	});
 
-	// The NAS link came back with the session still valid: the NAS did not restart after all.
-	// Only a return from a drop counts: right after "Restart" the link is still up.
-	let dropped = false;
-	$effect(() => {
-		const status = connection.status;
-		if (status === 'nas-reconnecting' || status === 'offline') dropped = true;
-		else if (status === 'up' && dropped) {
-			dropped = false;
-			if (restart.wait) endRestartWait();
-		}
-	});
+	// Follow the wait while the session lasts: the connection status is the server's own probe
+	// of the NAS. The NAS seen down then up with the session still valid: it is back. A guess
+	// the NAS never proves (still up after a grace) ends too. The rules live in restart.ts.
+	useRestartWatch(() => statusSignal(connection.status));
 
 	// The server was unreachable when the page opened: learn who is logged in once it answers.
 	$effect(() => {
@@ -50,7 +43,7 @@
 </script>
 
 {#if restart.wait}
-	<RestartScreen wait={restart.wait} onstop={endRestartWait} />
+	<RestartScreen wait={restart.wait} onstop={() => endRestartWait()} />
 {:else}
 	<AppShell>
 		{@render children()}

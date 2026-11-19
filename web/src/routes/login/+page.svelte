@@ -10,8 +10,15 @@
 	import ThemeToggle from '#lib/components/ThemeToggle.svelte';
 	import { loginWithCode, loginWithPassword, safeNext, type LoginResult } from '#lib/login.js';
 	import { pageVisible } from '#lib/nas.svelte.js';
-	import { backText, CERT_CHANGED, pollDelay, probeNas } from '#lib/restart.js';
-	import { endRestartWait, restart } from '#lib/restart.svelte.js';
+	import {
+		backText,
+		CERT_CHANGED,
+		pollDelay,
+		probeNas,
+		reachSignal,
+		type NasReach
+	} from '#lib/restart.js';
+	import { endRestartWait, markWaitDown, restart, useRestartWatch } from '#lib/restart.svelte.js';
 	import { setSession } from '#lib/session.svelte.js';
 
 	let step = $state<'password' | 'code'>('password');
@@ -27,27 +34,30 @@
 
 	const ended = $derived(page.url.searchParams.get('ended') === '1');
 
-	/** Sent here by a NAS restart that ended the session: wait for the NAS before the form. */
-	const waiting = $derived(page.url.searchParams.get('restarting') === '1' && !!restart.wait);
+	/**
+	 * Waiting for a restarting NAS: the form never shows under a live wait (one left over from
+	 * the app, or from before a reload).
+	 */
+	const waiting = $derived(!!restart.wait);
 	/** The NAS answered again after a restart: say so above the form. */
 	let back = $state<{ host: string | null } | null>(null);
+	/** The last answer of `GET /api/nas`, `null` before the first. */
+	let reach = $state<NasReach | null>(null);
+
+	// No session: a restart always ends it (the NAS forgets truelite's token), so the NAS was
+	// seen down. Also covers a reload during the wait, sent here by the (app) load.
+	markWaitDown();
 
 	// Ask whether the NAS is back, paced by restart.ts; paused while the page is hidden.
 	$effect(() => {
 		const wait = restart.wait;
-		if (!waiting || !wait || !pageVisible()) return;
+		if (!wait || !pageVisible()) return;
 		let stopped = false;
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const check = async () => {
-			const reach = await probeNas();
+			const answer = await probeNas();
 			if (stopped) return;
-			if (reach === 'up' || reach === 'cert_mismatch') {
-				back = { host: wait.host };
-				if (reach === 'cert_mismatch') error = CERT_CHANGED;
-				endRestartWait();
-				focusStep();
-				return;
-			}
+			reach = answer;
 			timer = setTimeout(check, pollDelay(wait.kind, Date.now() - wait.since));
 		};
 		check();
@@ -56,6 +66,17 @@
 			clearTimeout(timer);
 		};
 	});
+
+	useRestartWatch(
+		() => reachSignal(reach),
+		(reason, wait) => {
+			if (reason === 'back') {
+				back = { host: wait.host };
+				if (reach === 'cert_mismatch') error = CERT_CHANGED;
+			}
+			focusStep();
+		}
+	);
 
 	function stopWaiting() {
 		endRestartWait();
@@ -91,6 +112,8 @@
 	async function handle(result: LoginResult) {
 		switch (result.kind) {
 			case 'done':
+				// Logged in: the NAS answers, so any wait is over (none outlives a login).
+				endRestartWait('back');
 				setSession(result.user);
 				await goto(safeNext(page.url.searchParams.get('next')), { replaceState: true });
 				return;
@@ -130,7 +153,7 @@
 	{/if}
 </svelte:head>
 
-{#if waiting && restart.wait}
+{#if restart.wait}
 	<RestartScreen wait={restart.wait} onstop={stopWaiting} />
 {:else}
 	<main class="page">
