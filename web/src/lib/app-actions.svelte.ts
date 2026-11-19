@@ -20,6 +20,20 @@ const runs = new SvelteMap<string, ActionRun>();
 // pending calls find their run gone and drop their updates.
 onNasClose(() => runs.clear());
 
+const doneListeners: ((id: string) => void)[] = [];
+
+/**
+ * Calls `listener` with the app's id whenever an action's job ends, well or not: the app may
+ * have changed with no `app.query` event to say so (#57).
+ */
+export function onActionDone(listener: (id: string) => void): void {
+	doneListeners.push(listener);
+}
+
+function actionDone(id: string): void {
+	for (const listener of doneListeners) listener(id);
+}
+
 /** The running or failed action of app `id`, if any. */
 export function actionRun(id: string): ActionRun | undefined {
 	return runs.get(id);
@@ -77,6 +91,7 @@ export function runAction(id: string, action: AppAction, call: JobCall, from: Ap
 					() => {
 						const done = { ...current, done: true };
 						if (!update(done)) return;
+						actionDone(id);
 						setTimeout(() => {
 							if (runs.get(id) === done) runs.delete(id);
 						}, SETTLE_MAX_MS);
@@ -89,7 +104,9 @@ export function runAction(id: string, action: AppAction, call: JobCall, from: Ap
 					e instanceof NasError
 						? { code: e.code, message: e.message, errname: e.errname }
 						: { code: 'bad_request' as const, message: 'Something went wrong.' };
-				update({ ...current, progress: null, done: false, error: actionError(action, body) });
+				if (update({ ...current, progress: null, done: false, error: actionError(action, body) })) {
+					actionDone(id);
+				}
 			}
 		);
 }

@@ -60,6 +60,9 @@ List, inspect, follow logs, then start/stop/restart/upgrade apps with confirmati
 - [x] #32 Follow app logs
 - [x] #33 Start, stop and restart apps with job progress
 - [x] #34 Upgrade apps with job progress
+- [x] #57 Apps list: only the last of several updates refreshes
+- [ ] #59 Apps: "Check for updates" button
+- [ ] #60 Apps: check custom apps for newer images
 
 ## Phase 5 — Storage
 
