@@ -4,7 +4,7 @@
 
 use serde_json::{Map, Value};
 
-use super::{alerts, apps, datasets, pools, realtime, snapshots};
+use super::{alerts, apps, datasets, pools, realtime, snapshots, update};
 
 /// The function that cuts an event's `fields` down to what the web app shows, for the large ones
 /// (documented in `docs/ws-protocol.md`, "Reshaped topics"). It returns `None` for a payload of
@@ -17,6 +17,7 @@ pub(super) fn reshaper(event: &str) -> Option<fn(&Value) -> Option<Value>> {
         alerts::EVENT => Some(alerts::compact),
         datasets::EVENT => Some(datasets::compact),
         snapshots::EVENT => Some(snapshots::compact),
+        update::EVENT => Some(update::compact),
         _ => None,
     }
 }

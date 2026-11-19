@@ -211,6 +211,23 @@ so the server trims **both the events and the `alert.list` call result** to: `uu
 `formatted` may contain HTML: show it as text, never as markup. A `removed` event has only its
 `id`.
 
+**`update.status`**: whether a TrueNAS update is available (needs `SYSTEM_UPDATE_READ`).
+TrueNAS sends the new version's `manifest` (checksums, file list), so the server trims **both
+the events and the call result** to the same flat status, whether the event wraps it in
+`{status: …}` or not:
+
+```json
+{"code": "NORMAL",
+ "status": {"current_version": {"train": "TrueNAS-SCALE-Goldeye", "profile": "GENERAL",
+                                "matches_profile": true},
+            "new_version": {"version": "25.10.9", "release_notes": "…",
+                            "release_notes_url": "https://…"}},
+ "error": null, "update_download_progress": null}
+```
+
+`new_version` is `null` when TrueNAS is up to date. With `code: "ERROR"`, `status` is `null` and
+`error` is `{errname, reason}`. Events are only `changed` and carry no `id`.
+
 **`app.container_log_follow:{"app_name", "container_id", "tail_lines"}`**: one container's log
 (needs `APPS_READ`). `app_name` is the app id (lowercase letters, digits, dashes),
 `container_id` the container's `id` from `app.query` (`active_workloads.container_details`, 64 or

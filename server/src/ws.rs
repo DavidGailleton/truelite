@@ -242,6 +242,8 @@ fn result_reshaper(method: &str) -> Option<fn(Value) -> Value> {
         // The disks page: never `passwd`/`kmip_uid`; temperatures in one shape.
         truenas::disks::QUERY => Some(truenas::disks::compact_list),
         truenas::disks::TEMPERATURES => Some(truenas::disks::compact_temps),
+        // The system page: an update's release notes, never its `manifest`.
+        truenas::update::EVENT => Some(truenas::update::compact_result),
         _ => None,
     }
 }
@@ -819,6 +821,19 @@ mod tests {
             reply,
             json!({"id": 1, "result": [{"uuid": "a1", "level": "WARNING", "formatted": "Disk is hot"}]})
         );
+    }
+
+    /// Issue #40: an available update comes back without its `manifest`.
+    #[tokio::test]
+    async fn the_update_status_comes_back_without_the_manifest() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        let reply = call(&mut ws, 1, "update.status").await;
+        assert_eq!(
+            reply["result"]["status"]["new_version"],
+            json!({"version": "25.10.9", "release_notes": null, "release_notes_url": null})
+        );
+        assert_eq!(reply["result"]["code"], "NORMAL");
     }
 
     /// Issue #35: the pools page's `pool.query` comes back with a compacted topology.

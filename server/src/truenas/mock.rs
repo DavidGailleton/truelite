@@ -474,6 +474,11 @@ pub fn fake_nas() -> (
             "pool.snapshot.delete" => Reply::Result(json!(true)),
             "disk.query" => Reply::Result(json!([{"name": "sda", "serial": "ZA1", "pool": "tank",
                 "rotationrate": 7200, "passwd": "secret", "devname": "/dev/sda"}])),
+            "update.status" => Reply::Result(json!({"code": "NORMAL", "status": {
+                "current_version": {"train": "T", "profile": "GENERAL", "matches_profile": true},
+                "new_version": {"version": "25.10.9", "manifest": {"checksum": "abc"},
+                "release_notes": null, "release_notes_url": null}},
+                "error": null, "update_download_progress": null})),
             "disk.temperatures" => Reply::Result(json!({"sda": [36, 60], "sdb": 40})),
             "disk.temperature_agg" => {
                 Reply::Result(json!({"sda": {"min": 30, "max": 41, "avg": 35.5}}))

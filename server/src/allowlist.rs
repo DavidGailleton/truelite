@@ -34,6 +34,9 @@ const METHODS: &[&str] = &[
     "disk.temperatures",
     // Disks page: 7-day min, max and average temperature per disk (REPORTING_READ).
     "disk.temperature_agg",
+    // System page and dashboard banner: whether a TrueNAS update is available, with its release
+    // notes (SYSTEM_UPDATE_READ). Result reshaped by `truenas::update` (no `manifest`).
+    "update.status",
 ];
 
 /// Events the web app may subscribe to, by exact name.
@@ -55,6 +58,9 @@ const EVENTS: &[&str] = &[
     // Dashboard, apps page, app detail: app changes (APPS_READ). Reshaped by `truenas::apps` (no
     // workloads, metadata): the detail page queries its app again on each event about it.
     "app.query",
+    // System page and dashboard banner: update checks and downloads (SYSTEM_UPDATE_READ).
+    // Reshaped by `truenas::update` to a flat status without `manifest`.
+    "update.status",
 ];
 
 /// How the bridge forwards an event to the browser.
@@ -232,6 +238,10 @@ mod tests {
         assert!(!a.method("pool.scan") && !a.method("pool.dataset"));
         assert!(a.method("app.query") && a.event("app.query").is_some());
         for near in ["app", "app.stats", "app.start", "app.query.", "apps.query"] {
+            assert!(!a.method(near) && a.event(near).is_none(), "{near:?}");
+        }
+        assert!(a.method("update.status") && a.event("update.status").is_some());
+        for near in ["update", "update.run", "update.download", "update.update"] {
             assert!(!a.method(near) && a.event(near).is_none(), "{near:?}");
         }
         assert!(a.event("alert").is_none());

@@ -1,0 +1,29 @@
+{
+  "code": "NORMAL",
+  "status": {
+    "current_version": {
+      "train": "TrueNAS-SCALE-Goldeye",
+      "profile": "GENERAL",
+      "matches_profile": true
+    },
+    "new_version": {
+      "version": "25.10.9",
+      "manifest": {
+        "date": "2026-11-12T10:00:00",
+        "train": "TrueNAS-SCALE-Goldeye",
+        "version": "25.10.9",
+        "filename": "TrueNAS-SCALE-25.10.9.update",
+        "filesize": 1612345678,
+        "checksum": "4f1c0a9e7b2d3c5f6a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f",
+        "profile": "GENERAL",
+        "changelog": "Lots of text that the web app does not show, repeated to make the manifest large. Lots of text that the web app does not show, repeated to make the manifest large. Lots of text that the web app does not show, repeated to make the manifest large. Lots of text that the web app does not show, repeated to make the manifest large.",
+        "signature": "MEUCIQDl0Zb1yQkVxk3s0b9N9mQ7Uo6m1vQe8T2h0b1W0cGxAiBqH4vF9Wk1yQkVxk3s0b9N9mQ7Uo6m1vQe8T2h0b1W0cGxAiBqH4vF9Wk1yQkVxk3s0b9N9mQ7Uo6m1vQe8T2h0b1W0cGxA=="
+      },
+      "release_notes": "Fixes for SMB and apps.",
+      "release_notes_url": "https://www.truenas.com/docs/scale/25.10/gettingstarted/scalereleasenotes/"
+    }
+  },
+  "error": null,
+  "update_download_progress": null,
+  "extra": "not forwarded"
+}

@@ -23,6 +23,7 @@ mod rpc;
 mod session;
 pub mod snapshots;
 mod tls;
+pub mod update;
 
 // Only what the rest of the server uses; the other public types stay reachable through the
 // methods that return them.
