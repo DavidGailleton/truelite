@@ -9,6 +9,7 @@ pub mod alerts;
 pub mod apps;
 mod auth;
 mod client;
+pub mod datasets;
 mod error;
 mod events;
 pub mod jobs;

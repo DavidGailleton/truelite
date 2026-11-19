@@ -16,7 +16,8 @@ const METHODS: &[&str] = &[
     "alert.list",
     // Dashboard: pool health and raw space, with `select` (POOL_READ).
     "pool.query",
-    // Dashboard: usable space of the pools' root datasets (DATASET_READ).
+    // Dashboard: usable space of the pools' root datasets; storage page: the dataset tree
+    // (DATASET_READ). Result reshaped by `truenas::datasets` (properties as bytes).
     "pool.dataset.query",
     // Dashboard card, apps page, app detail (one app by id), with `select` (APPS_READ).
     "app.query",
@@ -34,6 +35,9 @@ const EVENTS: &[&str] = &[
     "pool.query",
     // Dashboard: scrub and resilver progress (POOL_SCRUB_READ).
     "pool.scan",
+    // Storage page: datasets created, changed or deleted (DATASET_READ). Reshaped by
+    // `truenas::datasets`; space changes send no event.
+    "pool.dataset.query",
     // Dashboard, apps page, app detail: app changes (APPS_READ). Reshaped by `truenas::apps` (no
     // workloads, metadata): the detail page queries its app again on each event about it.
     "app.query",

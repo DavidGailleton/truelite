@@ -456,6 +456,9 @@ pub fn fake_nas() -> (
                 {"name": "mirror-0", "type": "MIRROR", "status": "ONLINE", "children": [
                     {"name": "sda1", "type": "DISK", "status": "ONLINE", "disk": "sda",
                      "path": "/dev/sda1", "stats": {"read_errors": 2, "ops": [0, 1]}, "children": []}]}]}}])),
+            "pool.dataset.query" => Reply::Result(json!([{"id": "tank", "type": "FILESYSTEM",
+                "children": [], "used": {"parsed": 5, "rawvalue": "5", "value": "5B",
+                "source": "NONE", "source_info": null}}])),
             "app.query" => Reply::Result(json!([{"id": "jellyfin", "state": "RUNNING",
                 "active_workloads": {"container_details": [{"id": "c1", "state": "running"}]},
                 "metadata": {"description": "Media server"}}])),

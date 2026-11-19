@@ -1,0 +1,802 @@
+[
+ {
+  "id": "tank",
+  "type": "FILESYSTEM",
+  "name": "tank",
+  "pool": "tank",
+  "encrypted": false,
+  "encryption_root": null,
+  "key_loaded": null,
+  "locked": false,
+  "mountpoint": "/mnt/tank",
+  "children": [],
+  "user_properties": {
+   "org.truenas:managedby": {
+    "value": "truenas"
+   }
+  },
+  "comments": {
+   "parsed": "",
+   "rawvalue": "",
+   "value": "",
+   "source": "LOCAL",
+   "source_info": null
+  },
+  "used": {
+   "parsed": 1200000000000,
+   "rawvalue": "1200000000000",
+   "value": "1200000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "available": {
+   "parsed": 2400000000000,
+   "rawvalue": "2400000000000",
+   "value": "2400000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "quota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "refquota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "compression": {
+   "parsed": "lz4",
+   "rawvalue": "lz4",
+   "value": "LZ4",
+   "source": "INHERITED",
+   "source_info": "tank"
+  },
+  "usedbysnapshots": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbydataset": {
+   "parsed": 1200000000000,
+   "rawvalue": "1200000000000",
+   "value": "1200000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbychildren": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  }
+ },
+ {
+  "id": "tank/media",
+  "type": "FILESYSTEM",
+  "name": "tank/media",
+  "pool": "tank",
+  "encrypted": false,
+  "encryption_root": null,
+  "key_loaded": null,
+  "locked": false,
+  "mountpoint": "/mnt/tank/media",
+  "children": [],
+  "user_properties": {
+   "org.truenas:managedby": {
+    "value": "truenas"
+   }
+  },
+  "comments": {
+   "parsed": "",
+   "rawvalue": "",
+   "value": "",
+   "source": "LOCAL",
+   "source_info": null
+  },
+  "used": {
+   "parsed": 900000000000,
+   "rawvalue": "900000000000",
+   "value": "900000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "available": {
+   "parsed": 2400000000000,
+   "rawvalue": "2400000000000",
+   "value": "2400000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "quota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "refquota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "compression": {
+   "parsed": "lz4",
+   "rawvalue": "lz4",
+   "value": "LZ4",
+   "source": "INHERITED",
+   "source_info": "tank"
+  },
+  "usedbysnapshots": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbydataset": {
+   "parsed": 900000000000,
+   "rawvalue": "900000000000",
+   "value": "900000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbychildren": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  }
+ },
+ {
+  "id": "tank/media/photos",
+  "type": "FILESYSTEM",
+  "name": "tank/media/photos",
+  "pool": "tank",
+  "encrypted": false,
+  "encryption_root": null,
+  "key_loaded": null,
+  "locked": false,
+  "mountpoint": "/mnt/tank/media/photos",
+  "children": [],
+  "user_properties": {
+   "org.truenas:managedby": {
+    "value": "truenas"
+   }
+  },
+  "comments": {
+   "parsed": "",
+   "rawvalue": "",
+   "value": "",
+   "source": "LOCAL",
+   "source_info": null
+  },
+  "used": {
+   "parsed": 120000000000,
+   "rawvalue": "120000000000",
+   "value": "120000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "available": {
+   "parsed": 80000000000,
+   "rawvalue": "80000000000",
+   "value": "80000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "quota": {
+   "parsed": 200000000000,
+   "rawvalue": "200000000000",
+   "value": "200000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "refquota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "compression": {
+   "parsed": "lz4",
+   "rawvalue": "lz4",
+   "value": "LZ4",
+   "source": "INHERITED",
+   "source_info": "tank"
+  },
+  "usedbysnapshots": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbydataset": {
+   "parsed": 120000000000,
+   "rawvalue": "120000000000",
+   "value": "120000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbychildren": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  }
+ },
+ {
+  "id": "tank/backups",
+  "type": "FILESYSTEM",
+  "name": "tank/backups",
+  "pool": "tank",
+  "encrypted": false,
+  "encryption_root": null,
+  "key_loaded": null,
+  "locked": false,
+  "mountpoint": "/mnt/tank/backups",
+  "children": [],
+  "user_properties": {
+   "org.truenas:managedby": {
+    "value": "truenas"
+   }
+  },
+  "comments": {
+   "parsed": "",
+   "rawvalue": "",
+   "value": "",
+   "source": "LOCAL",
+   "source_info": null
+  },
+  "used": {
+   "parsed": 250000000000,
+   "rawvalue": "250000000000",
+   "value": "250000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "available": {
+   "parsed": 2400000000000,
+   "rawvalue": "2400000000000",
+   "value": "2400000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "quota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "refquota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "compression": {
+   "parsed": "lz4",
+   "rawvalue": "lz4",
+   "value": "LZ4",
+   "source": "INHERITED",
+   "source_info": "tank"
+  },
+  "usedbysnapshots": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbydataset": {
+   "parsed": 250000000000,
+   "rawvalue": "250000000000",
+   "value": "250000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbychildren": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  }
+ },
+ {
+  "id": "tank/vm-disk",
+  "type": "VOLUME",
+  "name": "tank/vm-disk",
+  "pool": "tank",
+  "encrypted": false,
+  "encryption_root": null,
+  "key_loaded": null,
+  "locked": false,
+  "mountpoint": null,
+  "children": [],
+  "user_properties": {
+   "org.truenas:managedby": {
+    "value": "truenas"
+   }
+  },
+  "comments": {
+   "parsed": "",
+   "rawvalue": "",
+   "value": "",
+   "source": "LOCAL",
+   "source_info": null
+  },
+  "used": {
+   "parsed": 40000000000,
+   "rawvalue": "40000000000",
+   "value": "40000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "available": {
+   "parsed": 2400000000000,
+   "rawvalue": "2400000000000",
+   "value": "2400000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "quota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "refquota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "compression": {
+   "parsed": "lz4",
+   "rawvalue": "lz4",
+   "value": "LZ4",
+   "source": "INHERITED",
+   "source_info": "tank"
+  },
+  "usedbysnapshots": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbydataset": {
+   "parsed": 40000000000,
+   "rawvalue": "40000000000",
+   "value": "40000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbychildren": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  }
+ },
+ {
+  "id": "tank/secret",
+  "type": "FILESYSTEM",
+  "name": "tank/secret",
+  "pool": "tank",
+  "encrypted": true,
+  "encryption_root": "tank/secret",
+  "key_loaded": false,
+  "locked": true,
+  "mountpoint": "/mnt/tank/secret",
+  "children": [],
+  "user_properties": {
+   "org.truenas:managedby": {
+    "value": "truenas"
+   }
+  },
+  "comments": {
+   "parsed": "",
+   "rawvalue": "",
+   "value": "",
+   "source": "LOCAL",
+   "source_info": null
+  },
+  "used": {
+   "parsed": 1000000,
+   "rawvalue": "1000000",
+   "value": "1000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "available": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "quota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "refquota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "compression": {
+   "parsed": "lz4",
+   "rawvalue": "lz4",
+   "value": "LZ4",
+   "source": "INHERITED",
+   "source_info": "tank"
+  },
+  "usedbysnapshots": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbydataset": {
+   "parsed": 1000000,
+   "rawvalue": "1000000",
+   "value": "1000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbychildren": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  }
+ },
+ {
+  "id": "tank/.system",
+  "type": "FILESYSTEM",
+  "name": "tank/.system",
+  "pool": "tank",
+  "encrypted": false,
+  "encryption_root": null,
+  "key_loaded": null,
+  "locked": false,
+  "mountpoint": "/mnt/tank/.system",
+  "children": [],
+  "user_properties": {
+   "org.truenas:managedby": {
+    "value": "truenas"
+   }
+  },
+  "comments": {
+   "parsed": "",
+   "rawvalue": "",
+   "value": "",
+   "source": "LOCAL",
+   "source_info": null
+  },
+  "used": {
+   "parsed": 2000000000,
+   "rawvalue": "2000000000",
+   "value": "2000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "available": {
+   "parsed": 2400000000000,
+   "rawvalue": "2400000000000",
+   "value": "2400000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "quota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "refquota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "compression": {
+   "parsed": "lz4",
+   "rawvalue": "lz4",
+   "value": "LZ4",
+   "source": "INHERITED",
+   "source_info": "tank"
+  },
+  "usedbysnapshots": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbydataset": {
+   "parsed": 2000000000,
+   "rawvalue": "2000000000",
+   "value": "2000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbychildren": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  }
+ },
+ {
+  "id": "tank/.system/cores",
+  "type": "FILESYSTEM",
+  "name": "tank/.system/cores",
+  "pool": "tank",
+  "encrypted": false,
+  "encryption_root": null,
+  "key_loaded": null,
+  "locked": false,
+  "mountpoint": "/mnt/tank/.system/cores",
+  "children": [],
+  "user_properties": {
+   "org.truenas:managedby": {
+    "value": "truenas"
+   }
+  },
+  "comments": {
+   "parsed": "",
+   "rawvalue": "",
+   "value": "",
+   "source": "LOCAL",
+   "source_info": null
+  },
+  "used": {
+   "parsed": 10000000,
+   "rawvalue": "10000000",
+   "value": "10000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "available": {
+   "parsed": 1000000000,
+   "rawvalue": "1000000000",
+   "value": "1000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "quota": {
+   "parsed": 1000000000,
+   "rawvalue": "1000000000",
+   "value": "1000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "refquota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "compression": {
+   "parsed": "lz4",
+   "rawvalue": "lz4",
+   "value": "LZ4",
+   "source": "INHERITED",
+   "source_info": "tank"
+  },
+  "usedbysnapshots": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbydataset": {
+   "parsed": 10000000,
+   "rawvalue": "10000000",
+   "value": "10000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbychildren": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  }
+ },
+ {
+  "id": "tank/.ix-apps",
+  "type": "FILESYSTEM",
+  "name": "tank/.ix-apps",
+  "pool": "tank",
+  "encrypted": false,
+  "encryption_root": null,
+  "key_loaded": null,
+  "locked": false,
+  "mountpoint": "/mnt/tank/.ix-apps",
+  "children": [],
+  "user_properties": {
+   "org.truenas:managedby": {
+    "value": "truenas"
+   }
+  },
+  "comments": {
+   "parsed": "",
+   "rawvalue": "",
+   "value": "",
+   "source": "LOCAL",
+   "source_info": null
+  },
+  "used": {
+   "parsed": 30000000000,
+   "rawvalue": "30000000000",
+   "value": "30000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "available": {
+   "parsed": 2400000000000,
+   "rawvalue": "2400000000000",
+   "value": "2400000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "quota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "refquota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "compression": {
+   "parsed": "lz4",
+   "rawvalue": "lz4",
+   "value": "LZ4",
+   "source": "INHERITED",
+   "source_info": "tank"
+  },
+  "usedbysnapshots": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbydataset": {
+   "parsed": 30000000000,
+   "rawvalue": "30000000000",
+   "value": "30000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbychildren": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  }
+ },
+ {
+  "id": "tank/.ix-apps/app_mounts",
+  "type": "FILESYSTEM",
+  "name": "tank/.ix-apps/app_mounts",
+  "pool": "tank",
+  "encrypted": false,
+  "encryption_root": null,
+  "key_loaded": null,
+  "locked": false,
+  "mountpoint": "/mnt/tank/.ix-apps/app_mounts",
+  "children": [],
+  "user_properties": {
+   "org.truenas:managedby": {
+    "value": "truenas"
+   }
+  },
+  "comments": {
+   "parsed": "",
+   "rawvalue": "",
+   "value": "",
+   "source": "LOCAL",
+   "source_info": null
+  },
+  "used": {
+   "parsed": 1000000000,
+   "rawvalue": "1000000000",
+   "value": "1000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "available": {
+   "parsed": 2400000000000,
+   "rawvalue": "2400000000000",
+   "value": "2400000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "quota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "refquota": {
+   "parsed": null,
+   "rawvalue": "0",
+   "value": null,
+   "source": "DEFAULT",
+   "source_info": null
+  },
+  "compression": {
+   "parsed": "lz4",
+   "rawvalue": "lz4",
+   "value": "LZ4",
+   "source": "INHERITED",
+   "source_info": "tank"
+  },
+  "usedbysnapshots": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbydataset": {
+   "parsed": 1000000000,
+   "rawvalue": "1000000000",
+   "value": "1000000000B",
+   "source": "NONE",
+   "source_info": null
+  },
+  "usedbychildren": {
+   "parsed": 0,
+   "rawvalue": "0",
+   "value": "0B",
+   "source": "NONE",
+   "source_info": null
+  }
+ }
+]

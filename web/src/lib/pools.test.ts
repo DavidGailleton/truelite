@@ -126,11 +126,14 @@ describe('root usage', () => {
 			{ id: 'tank', used: { parsed: 4 * TiB }, available: { parsed: 6 * TiB } },
 			{ id: 'fast', used: { rawvalue: '100' }, available: { rawvalue: '300', parsed: null } },
 			{ id: 'tank/media', used: { parsed: 1 }, available: { parsed: 1 } },
-			{ id: 'bad', used: {}, available: { parsed: 1 } }
+			{ id: 'bad', used: {}, available: { parsed: 1 } },
+			// As the server sends them: flattened to bytes.
+			{ id: 'flat', used: 10, available: 20 }
 		]);
 		expect([...u]).toEqual([
 			['tank', { used: 4 * TiB, available: 6 * TiB }],
-			['fast', { used: 100, available: 300 }]
+			['fast', { used: 100, available: 300 }],
+			['flat', { used: 10, available: 20 }]
 		]);
 		expect(parseRootUsage(null).size).toBe(0);
 	});

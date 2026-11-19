@@ -59,6 +59,16 @@ let usageRequest = 0;
 let usageAt = 0;
 let usageTimer: ReturnType<typeof setTimeout> | undefined;
 
+/** Called on every `pool.query` event that was applied (the dataset tree re-reads space). */
+const poolChangeListeners = new Set<() => void>();
+
+/** Calls `listener` after each pool change until the returned function is called. */
+export function onPoolChange(listener: () => void): () => void {
+	const own = () => listener(); // one entry per caller, even with the same function
+	poolChangeListeners.add(own);
+	return () => poolChangeListeners.delete(own);
+}
+
 const rows = $derived(pools.list ? poolRows(pools.list, pools.usage, Date.now()) : null);
 
 /** The pools as the card shows them, worst first; `null` until the first answer. Reactive. */
@@ -168,6 +178,7 @@ function onPoolMessage(message: TopicMessage): void {
 			return;
 		}
 		pools.list = next;
+		for (const listener of poolChangeListeners) listener();
 		if (message.data.kind !== 'removed') loadUsageSoon();
 		// Events carry no topology (`truenas/pools.rs`): read the layouts again, debounced.
 		if (layoutWanted > 0 && message.data.kind !== 'removed') {

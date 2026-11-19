@@ -122,8 +122,12 @@ export function parsePools(raw: unknown): Pool[] | null {
 	return raw.map(parsePool).filter((p): p is Pool => p !== null);
 }
 
-/** A ZFS property object (`{parsed, rawvalue, value, source}`) as bytes. */
-function bytesOf(prop: unknown): number | null {
+/**
+ * A ZFS property as bytes: a plain number (the server flattens `pool.dataset.query` properties,
+ * `truenas/datasets.rs`) or a property object (`{parsed, rawvalue, value, source}`).
+ */
+export function bytesOf(prop: unknown): number | null {
+	if (isNum(prop)) return prop;
 	if (!isObj(prop)) return null;
 	if (isNum(prop.parsed)) return prop.parsed;
 	const n = isStr(prop.rawvalue) ? Number(prop.rawvalue) : NaN;

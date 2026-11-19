@@ -232,6 +232,8 @@ fn result_reshaper(method: &str) -> Option<fn(Value) -> Value> {
         truenas::alerts::EVENT => Some(truenas::alerts::compact_list),
         // The pools page selects `topology`: names, states and error counts only.
         truenas::pools::EVENT => Some(truenas::pools::compact_list),
+        // Dashboard root usage and the storage page's tree: ZFS properties as plain bytes.
+        truenas::datasets::EVENT => Some(truenas::datasets::compact_list),
         _ => None,
     }
 }
@@ -822,6 +824,18 @@ mod tests {
         assert_eq!(disk["errors"]["read"], 2);
         assert!(disk.get("stats").is_none() && disk.get("path").is_none());
         assert_eq!(reply["result"][0]["topology"]["cache"], json!([]));
+    }
+
+    /// Issue #36: dataset properties come back as plain bytes.
+    #[tokio::test]
+    async fn a_dataset_query_comes_back_with_flat_numbers() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        let reply = call(&mut ws, 1, "pool.dataset.query").await;
+        assert_eq!(
+            reply,
+            json!({"id": 1, "result": [{"id": "tank", "type": "FILESYSTEM", "used": 5}]})
+        );
     }
 
     /// Issue #31: the app detail page asks for one app with a filter and a dotted `select`; both

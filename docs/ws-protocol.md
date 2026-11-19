@@ -138,6 +138,14 @@ selects it (the pools page does): each of its six groups (`data`, `log`, `cache`
 `pool.scan` (scrub and resilver progress, `POOL_SCRUB_READ`) is small and forwarded as it is:
 `fields` = `{"name": "tank", "scan": {…}}`, the same `scan` object as in `pool.query`.
 
+**`pool.dataset.query`**: datasets created, changed or deleted (needs `DATASET_READ`). Space
+changes send no event. The call result and each event's `fields` are cut down the same way
+(`server/src/truenas/datasets.rs`): `id`, `type`, `encrypted`, `locked`, `key_loaded` as sent,
+and `used`, `available`, `quota`, `refquota` as plain byte counts. TrueNAS sends those four as
+`{parsed, rawvalue, …}` objects; the server keeps `parsed`, or `rawvalue` read as an integer, or
+leaves the field out. Everything else (`children`, `user_properties`, `mountpoint`, other
+properties) is dropped. A `removed` event has only its `id`.
+
 **`app.query`**: app changes (needs `APPS_READ`). TrueNAS sends the whole app on every change:
 its containers, ports and volumes (`active_workloads`), `portals`, the catalog `metadata` and
 `notes`. The server keeps only the fields the web app selects in its own `app.query` call: `id`,
