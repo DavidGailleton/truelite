@@ -70,10 +70,8 @@ impl Endpoint {
         };
         match Client::connect(&self.url, self.tls.clone(), opts).await {
             Ok(_) => Reach::Up,
-            Err(e @ Error::CertMismatch { .. }) => {
-                tracing::error!("{e}");
-                Reach::CertMismatch
-            }
+            // Not logged here: the caller probes often and logs a change only.
+            Err(Error::CertMismatch { got }) => Reach::CertMismatch { got },
             Err(e) => {
                 tracing::debug!("NAS probe failed: {e}");
                 Reach::Down
@@ -87,8 +85,10 @@ impl Endpoint {
 pub enum Reach {
     Up,
     Down,
-    /// The NAS presents another certificate than the pinned one.
-    CertMismatch,
+    /// The NAS presents another certificate than the pinned one: `got` is its fingerprint.
+    CertMismatch {
+        got: Fingerprint,
+    },
 }
 
 impl Reach {
@@ -97,7 +97,7 @@ impl Reach {
         match self {
             Reach::Up => "up",
             Reach::Down => "down",
-            Reach::CertMismatch => "cert_mismatch",
+            Reach::CertMismatch { .. } => "cert_mismatch",
         }
     }
 }

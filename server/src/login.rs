@@ -29,7 +29,7 @@ use crate::sessions::{
     spawn_every,
 };
 use crate::truenas::{
-    self, AuthFailure, Endpoint, LoginStep, PendingOtp, Reach, Secret, SessionOptions,
+    self, AuthFailure, Endpoint, Fingerprint, LoginStep, PendingOtp, Reach, Secret, SessionOptions,
 };
 
 /// Cookie holding the ticket of a login waiting for its one-time code.
@@ -162,6 +162,15 @@ impl Login {
             return Ok(reach);
         }
         let reach = nas.probe(PROBE_TIMEOUT).await;
+        match reach_note(last.map(|(_, before)| before), reach) {
+            Some(ReachNote::Mismatch(got)) => {
+                tracing::error!("{}", truenas::Error::CertMismatch { got });
+            }
+            Some(ReachNote::Matches) => {
+                tracing::info!("the NAS certificate matches TRUELITE_NAS_FINGERPRINT again");
+            }
+            None => {}
+        }
         *last = Some((Instant::now(), reach));
         Ok(reach)
     }
@@ -180,6 +189,27 @@ impl Login {
     #[cfg(test)]
     fn pending(&self) -> usize {
         self.lock().len()
+    }
+}
+
+/// A probe result worth logging, given the one before.
+#[derive(Debug, PartialEq, Eq)]
+enum ReachNote {
+    /// The NAS started presenting this unpinned certificate.
+    Mismatch(Fingerprint),
+    /// The NAS presents the pinned certificate again.
+    Matches,
+}
+
+/// What to log after a probe, so a mismatch is logged once, not at every probe (the login page
+/// polls): when the NAS turns to an unpinned certificate (or to another one), and when it
+/// presents the pinned one again. `before` is the previous probe's result, if any.
+fn reach_note(before: Option<Reach>, now: Reach) -> Option<ReachNote> {
+    match (before, now) {
+        (Some(Reach::CertMismatch { got: old }), Reach::CertMismatch { got }) if old == got => None,
+        (_, Reach::CertMismatch { got }) => Some(ReachNote::Mismatch(got)),
+        (Some(Reach::CertMismatch { .. }), Reach::Up) => Some(ReachNote::Matches),
+        _ => None,
     }
 }
 
@@ -847,5 +877,27 @@ mod tests {
     async fn api_nas_without_a_nas_is_unavailable() {
         let r = probe(&state_for(None)).await;
         assert_eq!(r.status, StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[test]
+    fn reach_note_logs_a_mismatch_once_and_its_end() {
+        let a = Reach::CertMismatch {
+            got: Fingerprint::of(b"cert a"),
+        };
+        let b = Reach::CertMismatch {
+            got: Fingerprint::of(b"cert b"),
+        };
+        let note_a = Some(ReachNote::Mismatch(Fingerprint::of(b"cert a")));
+        let note_b = Some(ReachNote::Mismatch(Fingerprint::of(b"cert b")));
+        assert_eq!(reach_note(None, Reach::Up), None);
+        assert_eq!(reach_note(None, a), note_a);
+        assert_eq!(reach_note(Some(Reach::Up), a), note_a);
+        assert_eq!(reach_note(Some(Reach::Down), a), note_a);
+        assert_eq!(reach_note(Some(a), a), None);
+        assert_eq!(reach_note(Some(a), b), note_b);
+        assert_eq!(reach_note(Some(a), Reach::Up), Some(ReachNote::Matches));
+        assert_eq!(reach_note(Some(a), Reach::Down), None);
+        assert_eq!(reach_note(Some(Reach::Up), Reach::Down), None);
+        assert_eq!(reach_note(Some(Reach::Down), Reach::Up), None);
     }
 }
