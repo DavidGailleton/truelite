@@ -11,6 +11,19 @@ Every push to `main` is a release. After CI passes, the `release` job reads the
 updates `server/Cargo.toml`, `web/package.json` and `CHANGELOG.md`, tags `vX.Y.Z`, publishes a
 GitHub Release and pushes the image `ghcr.io/davidgailleton/truelite:X.Y.Z` (+ `X.Y`, `latest`).
 
+### TrueNAS API version
+
+The TrueNAS API is pinned by `API_VERSION` in `server/src/truenas/mod.rs` (one literal; CI reads
+it). From it, CI titles the release `vX.Y.Z — TrueNAS 25.10`, adds the image tags
+`truenas25.10` (moving) and `X.Y.Z-truenas25.10`, and the label `io.truelite.truenas-api`. The
+TrueNAS version is never part of the semver itself.
+
+`main` always targets the newest supported TrueNAS; branches are not named after API versions.
+When `main` moves to a new TrueNAS release and the previous one still needs fixes, cut a
+maintenance branch `truenas/25.10` from its last release and release patches from there (the
+CI triggers and the release push to `main` must then accept `truenas/*`). After
+1.0, moving `main` to a new TrueNAS API is a breaking change (`feat!:`, major bump).
+
 | Commit type | Bump while 0.x |
 |---|---|
 | `feat:` or a breaking change (`feat!:`, `BREAKING CHANGE:`) | minor (0.2.0 → 0.3.0) |

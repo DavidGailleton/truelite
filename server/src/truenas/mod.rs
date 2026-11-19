@@ -37,5 +37,17 @@ pub use session::{Endpoint, Link, Session, SessionOptions};
 pub use tls::Fingerprint;
 
 /// Pinned API version. The NAS (25.10.8) serves `v25.10.0` … `v25.10.5`; the vault reference
-/// documents v25.10.5, so the wire format here matches it exactly.
+/// documents v25.10.5, so the wire format here matches it exactly. CI reads this line to tag the
+/// image and title the release (`truenasX.Y`), keep it a plain literal.
+pub const API_VERSION: &str = "25.10.5";
+
+/// WebSocket path of [`API_VERSION`].
 pub const API_PATH: &str = "/api/v25.10.5";
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn api_path_matches_version() {
+        assert_eq!(super::API_PATH, format!("/api/v{}", super::API_VERSION));
+    }
+}

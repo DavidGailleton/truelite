@@ -101,7 +101,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           V: ${{ steps.next.outputs.version }}
-        run: gh release create "v$V" --title "v$V" --notes-file "$RUNNER_TEMP/notes.md"
+        run: |
+          api=$(sed -n 's/^pub const API_VERSION: &str = "\(.*\)";$/\1/p' server/src/truenas/mod.rs)
+          test -n "$api"; train=${api%.*}
+          { echo "Targets TrueNAS $train (API v$api). Image: \`ghcr.io/${{ github.repository }}:truenas$train\`."
+            echo; cat "$RUNNER_TEMP/notes.md"; } > "$RUNNER_TEMP/release.md"
+          gh release create "v$V" --title "v$V — TrueNAS $train" --notes-file "$RUNNER_TEMP/release.md"
 
   image:
     needs: release
@@ -120,6 +125,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # The TrueNAS API pin (server/src/truenas/mod.rs) gives the `truenasX.Y` tags: users pick
+      # the tag matching their TrueNAS release instead of `latest`.
+      - name: TrueNAS API version
+        id: api
+        run: |
+          api=$(sed -n 's/^pub const API_VERSION: &str = "\(.*\)";$/\1/p' server/src/truenas/mod.rs)
+          test -n "$api"
+          echo "version=$api" >> "$GITHUB_OUTPUT"
+          echo "train=${api%.*}" >> "$GITHUB_OUTPUT"
       - uses: docker/metadata-action@v6
         id: meta
         with:
@@ -128,7 +142,12 @@ jobs:
             type=raw,value=latest
             type=semver,pattern={{version}},value=v${{ needs.release.outputs.version }}
             type=semver,pattern={{major}}.{{minor}},value=v${{ needs.release.outputs.version }}
+            type=raw,value=truenas${{ steps.api.outputs.train }}
+            type=raw,value=${{ needs.release.outputs.version }}-truenas${{ steps.api.outputs.train }}
             type=sha
+          labels: |
+            org.opencontainers.image.description=Light, fast web UI for TrueNAS ${{ steps.api.outputs.train }}
+            io.truelite.truenas-api=v${{ steps.api.outputs.version }}
       - uses: docker/build-push-action@v7
         with:
           context: .

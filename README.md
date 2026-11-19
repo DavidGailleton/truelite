@@ -70,7 +70,10 @@ Checks run in CI: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo tes
 
 ## Deploy on TrueNAS
 
-The image is published to `ghcr.io/davidgailleton/truelite`. Install it as a Custom App
+The image is published to `ghcr.io/davidgailleton/truelite`. Each truelite version targets one
+TrueNAS release (today **25.10 Goldeye**); use the tag named after yours, e.g.
+`ghcr.io/davidgailleton/truelite:truenas25.10`, rather than `latest`, which follows the newest
+TrueNAS. `GET /api/health` reports the pinned API version (`truenas_api`). Install it as a Custom App
 (Apps → Discover → Install via YAML) with [`compose.example.yaml`](compose.example.yaml); the app
 name must be lowercase letters, digits and hyphens (e.g. `truelite`).
 

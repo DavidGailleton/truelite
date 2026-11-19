@@ -152,7 +152,11 @@ pub fn router(state: AppState) -> Router {
 }
 
 async fn health() -> Json<serde_json::Value> {
-    Json(json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }))
+    Json(json!({
+        "status": "ok",
+        "version": env!("CARGO_PKG_VERSION"),
+        "truenas_api": truenas::API_VERSION,
+    }))
 }
 
 /// Who is logged in, for the web app. 401 when nobody is.
@@ -243,7 +247,9 @@ mod tests {
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         let body = to_bytes(res.into_body(), 1024).await.unwrap();
-        assert!(String::from_utf8_lossy(&body).contains("\"ok\""));
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["truenas_api"], truenas::API_VERSION);
     }
 
     #[tokio::test]

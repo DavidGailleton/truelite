@@ -2,7 +2,8 @@
 # Then open http://<any NAS address>:8090 (LAN or Tailscale; plain HTTP is fine).
 services:
   truelite:
-    image: ghcr.io/davidgailleton/truelite:latest
+    # `truenasX.Y` = newest truelite for that TrueNAS release; pick yours (System → Update).
+    image: ghcr.io/davidgailleton/truelite:truenas25.10
     restart: unless-stopped
     ports:
       - "8090:8080"
