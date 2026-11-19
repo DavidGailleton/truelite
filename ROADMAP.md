@@ -69,7 +69,7 @@ Pools, datasets, snapshots, scrubs, disks and SMART. Destructive actions need ty
 - [x] #36 Dataset tree with usage
 - [x] #37 Snapshots: list, create, delete
 - [x] #38 Scrub status and start
-- [ ] #39 Disks and SMART results
+- [ ] #39 Disks and temperatures (SMART is not in the 25.10 API, see #61)
 
 ## Phase 6 — Updates & reboot
 
@@ -104,3 +104,9 @@ Runs as a TrueNAS custom app from the public GHCR image, documented; release v1.
 - [ ] #54 Release v1.0.0
 - [x] #56 Session cookie works over plain HTTP
 
+
+## Later
+
+Blocked upstream or out of the current phases; no milestone.
+
+- [ ] #61 SMART test results (when TrueNAS exposes them again)
