@@ -2,6 +2,25 @@
 
 Generated from conventional commits by git-cliff on every push to main.
 
+## v0.16.0 — 2026-11-19
+
+### Features
+
+- **storage:** Pools page with layout and disk status
+- **storage:** Dataset tree with usage
+- **storage:** Snapshots list, take and delete
+- **storage:** Start, pause and stop a data check
+- **storage:** Disks page with temperatures
+
+### Refactoring
+
+- **storage:** Reuse shared helpers in the storage code
+
+### Documentation
+
+- **roadmap:** #39 becomes disks and temperatures, SMART deferred to #61
+- **roadmap:** Phase 5 storage done
+
 ## v0.15.2 — 2026-11-18
 
 ### Fixes
