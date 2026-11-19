@@ -20,6 +20,7 @@ pub mod realtime;
 mod reshape;
 mod rpc;
 mod session;
+pub mod snapshots;
 mod tls;
 
 // Only what the rest of the server uses; the other public types stay reachable through the

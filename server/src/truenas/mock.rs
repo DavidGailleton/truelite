@@ -459,6 +459,19 @@ pub fn fake_nas() -> (
             "pool.dataset.query" => Reply::Result(json!([{"id": "tank", "type": "FILESYSTEM",
                 "children": [], "used": {"parsed": 5, "rawvalue": "5", "value": "5B",
                 "source": "NONE", "source_info": null}}])),
+            // Snapshots: plain calls (no job); create answers with the new snapshot.
+            "pool.snapshot.query" | "pool.snapshot.create" => {
+                let entry = json!({"id": "tank@s1", "name": "tank@s1", "pool": "tank",
+                    "type": "SNAPSHOT", "snapshot_name": "s1", "dataset": "tank", "createtxg": "7",
+                    "properties": {"used": {"parsed": 3, "rawvalue": "3", "value": "3B",
+                    "source": "NONE"}}});
+                Reply::Result(if method == "pool.snapshot.query" {
+                    json!([entry])
+                } else {
+                    entry
+                })
+            }
+            "pool.snapshot.delete" => Reply::Result(json!(true)),
             "app.query" => Reply::Result(json!([{"id": "jellyfin", "state": "RUNNING",
                 "active_workloads": {"container_details": [{"id": "c1", "state": "running"}]},
                 "metadata": {"description": "Media server"}}])),

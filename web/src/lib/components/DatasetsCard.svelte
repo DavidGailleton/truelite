@@ -2,12 +2,13 @@
 	// The Storage page's dataset tree: one tree per pool, each dataset with its space, a bar when
 	// a quota limits it, and its state in words (locked, encrypted, volume). Branches holding
 	// something that needs a look start opened. TrueNAS's own datasets are hidden and counted.
-	// Read-only; snapshots (#37) come next.
+	// Each row links to the dataset's snapshots (#37).
 	import { cardView } from '#lib/card-state.js';
 	import { datasetUsage, openIds, type DatasetNode } from '#lib/datasets.js';
 	import { datasets, useDatasets } from '#lib/datasets.svelte.js';
 	import { connection } from '#lib/nas.svelte.js';
 	import { formatBytes } from '#lib/realtime.js';
+	import { snapshotsHref } from '#lib/snapshots.js';
 	import Card from './Card.svelte';
 	import CardNotice from './CardNotice.svelte';
 	import Icon from './Icon.svelte';
@@ -54,6 +55,15 @@
 	{:else}
 		<span class="space">{formatBytes(d.used)} used · {formatBytes(d.available)} free</span>
 	{/if}
+	<!-- A link wins over its <summary>: following it doesn't open or close the branch. -->
+	<a
+		class="snapshots"
+		href={snapshotsHref(d.id)}
+		aria-label="Snapshots of {d.id}"
+		title="Snapshots"
+	>
+		<Icon name="camera" size={16} />
+	</a>
 {/snippet}
 
 {#snippet node(d: DatasetNode, label: string)}
@@ -179,6 +189,7 @@
 	}
 
 	.head {
+		margin-right: auto;
 		display: inline-flex;
 		flex-wrap: wrap;
 		align-items: center;
@@ -199,6 +210,27 @@
 	.space {
 		color: var(--text-secondary);
 		font-size: var(--text-sm);
+	}
+	/* After the space, at the row's end (`.head` takes the free room). */
+	.snapshots {
+		display: inline-grid;
+		flex: none;
+		place-items: center;
+		width: 2.25rem;
+		height: 2.25rem;
+		margin: -0.25rem 0;
+		border-radius: var(--radius-md);
+		color: var(--text-secondary);
+	}
+	.snapshots:hover {
+		color: var(--text-primary);
+		background: var(--container-inset);
+	}
+	@media (pointer: coarse) {
+		.snapshots {
+			width: var(--touch);
+			height: var(--touch);
+		}
 	}
 	.quota {
 		display: grid;

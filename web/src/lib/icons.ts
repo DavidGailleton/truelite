@@ -133,7 +133,19 @@ export const ICONS = {
 	lock: [
 		'M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z',
 		'M7 11V7a5 5 0 0 1 10 0v4'
-	]
+	],
+	camera: [
+		'M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z',
+		'M9 13a3 3 0 1 0 6 0a3 3 0 1 0-6 0'
+	],
+	'trash-2': [
+		'M3 6h18',
+		'M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6',
+		'M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2',
+		'M10 11v6',
+		'M14 11v6'
+	],
+	plus: ['M5 12h14', 'M12 5v14']
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof ICONS;

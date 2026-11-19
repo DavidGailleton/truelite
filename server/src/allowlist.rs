@@ -23,6 +23,9 @@ const METHODS: &[&str] = &[
     "app.query",
     // App detail: versions and changelog in the Update dialog (APPS_READ). A read, despite its name.
     "app.upgrade_summary",
+    // Snapshots page: one dataset's snapshots (SNAPSHOT_READ). Result reshaped by
+    // `truenas::snapshots` (properties as numbers).
+    "pool.snapshot.query",
 ];
 
 /// Events the web app may subscribe to, by exact name.
@@ -38,6 +41,9 @@ const EVENTS: &[&str] = &[
     // Storage page: datasets created, changed or deleted (DATASET_READ). Reshaped by
     // `truenas::datasets`; space changes send no event.
     "pool.dataset.query",
+    // Snapshots page: snapshots taken or deleted from truelite or the TrueNAS UI (SNAPSHOT_READ).
+    // Reshaped by `truenas::snapshots`; periodic tasks send no event.
+    "pool.snapshot.query",
     // Dashboard, apps page, app detail: app changes (APPS_READ). Reshaped by `truenas::apps` (no
     // workloads, metadata): the detail page queries its app again on each event about it.
     "app.query",
@@ -81,12 +87,12 @@ const PARAM_EVENTS: &[ParamEvent] = &[
 ];
 
 /// Checks the browser's params of an action and rebuilds them; `None` refuses them.
-pub type JobCheck = fn(&Value) -> Option<Value>;
+pub type ActionCheck = fn(&Value) -> Option<Value>;
 
 /// Actions: TrueNAS job methods, each with the check that rebuilds its params. The bridge
 /// follows their job and sends its progress (`truenas::jobs`). Every one has a confirmation
 /// dialog in the web app.
-const JOB_METHODS: &[(&str, JobCheck)] = &[
+const JOB_METHODS: &[(&str, ActionCheck)] = &[
     // App detail: Start, Stop, Restart (APPS_WRITE). Params `[app_name]`.
     ("app.start", crate::truenas::apps::app_name_param),
     ("app.stop", crate::truenas::apps::app_name_param),
@@ -100,13 +106,30 @@ const JOB_METHODS: &[(&str, JobCheck)] = &[
     ),
 ];
 
+/// Actions that are plain calls (no job): each with the check that rebuilds its params. The
+/// answer comes back like any call's. Every one has a confirmation dialog in the web app.
+const ACTIONS: &[(&str, ActionCheck)] = &[
+    // Snapshots page: Take snapshot (SNAPSHOT_WRITE). Params `[{dataset, name, recursive}]`.
+    (
+        "pool.snapshot.create",
+        crate::truenas::snapshots::create_param,
+    ),
+    // Snapshots page: Delete, after typing its name (SNAPSHOT_DELETE). Params `[id]`, one
+    // snapshot: never recursive or deferred.
+    (
+        "pool.snapshot.delete",
+        crate::truenas::snapshots::delete_param,
+    ),
+];
+
 /// Exact-name lists of the methods and events the bridge forwards. No prefixes, no wildcards.
 #[derive(Debug, Clone, Copy)]
 pub struct Allowlist {
     methods: &'static [&'static str],
     events: &'static [&'static str],
     param_events: &'static [ParamEvent],
-    jobs: &'static [(&'static str, JobCheck)],
+    jobs: &'static [(&'static str, ActionCheck)],
+    actions: &'static [(&'static str, ActionCheck)],
 }
 
 impl Allowlist {
@@ -118,6 +141,7 @@ impl Allowlist {
             events,
             param_events: &[],
             jobs: &[],
+            actions: &[],
         }
     }
 
@@ -126,12 +150,14 @@ impl Allowlist {
         self.methods.contains(&method)
     }
 
-    /// The params check of `method` when it is an allowed action (a job method).
-    pub fn job(&self, method: &str) -> Option<JobCheck> {
-        self.jobs
-            .iter()
-            .find(|(n, _)| *n == method)
-            .map(|(_, check)| *check)
+    /// The params check of `method` when it is an allowed action that runs as a job.
+    pub fn job(&self, method: &str) -> Option<ActionCheck> {
+        find(self.jobs, method)
+    }
+
+    /// The params check of `method` when it is an allowed action that is a plain call.
+    pub fn action(&self, method: &str) -> Option<ActionCheck> {
+        find(self.actions, method)
     }
 
     /// Where and how to follow `topic` when the browser may: the topic itself for a listed
@@ -152,6 +178,12 @@ impl Allowlist {
     }
 }
 
+fn find(list: &[(&str, ActionCheck)], method: &str) -> Option<ActionCheck> {
+    list.iter()
+        .find(|(n, _)| *n == method)
+        .map(|(_, check)| *check)
+}
+
 impl Default for Allowlist {
     fn default() -> Self {
         Self {
@@ -159,6 +191,7 @@ impl Default for Allowlist {
             events: EVENTS,
             param_events: PARAM_EVENTS,
             jobs: JOB_METHODS,
+            actions: ACTIONS,
         }
     }
 }
@@ -228,10 +261,10 @@ mod tests {
         assert!(Allowlist::new(&[], &[]).event(&topic).is_none());
     }
 
-    /// Actions live only in `JOB_METHODS`, behind a params check and a dialog: no action
-    /// slips into the plain lists.
+    /// Actions live only in `JOB_METHODS` and `ACTIONS`, behind a params check and a dialog:
+    /// no action slips into the plain lists.
     #[test]
-    fn actions_are_only_job_methods() {
+    fn actions_are_only_checked_methods() {
         let writes = [
             ".create",
             ".update",
@@ -293,12 +326,44 @@ mod tests {
             assert!(a.job(near).is_none(), "{near:?}");
         }
         assert!(Allowlist::new(&[], &[]).job("app.start").is_none());
+        for action in ["pool.snapshot.create", "pool.snapshot.delete"] {
+            assert!(!a.method(action) && a.job(action).is_none(), "{action}");
+            assert!(a.action(action).is_some(), "{action}");
+        }
+        let delete = a.action("pool.snapshot.delete").unwrap();
+        assert_eq!(
+            delete(&serde_json::json!(["tank@a"])),
+            Some(serde_json::json!(["tank@a", {}]))
+        );
+        assert_eq!(
+            delete(&serde_json::json!(["tank@a", {"recursive": true}])),
+            None
+        );
+        for near in [
+            "pool.snapshot.rollback",
+            "pool.snapshot",
+            "pool.snapshot.create.",
+        ] {
+            assert!(
+                a.action(near).is_none() && a.job(near).is_none(),
+                "{near:?}"
+            );
+        }
+        assert!(a.method("pool.snapshot.query") && a.event("pool.snapshot.query").is_some());
+        assert!(a.action("app.start").is_none());
+        assert!(
+            Allowlist::new(&[], &[])
+                .action("pool.snapshot.create")
+                .is_none()
+        );
     }
 
     #[test]
     fn no_name_is_listed_twice() {
-        let jobs: Vec<&str> = JOB_METHODS.iter().map(|(n, _)| *n).collect();
-        for list in [METHODS, EVENTS, &jobs] {
+        // A name is a job or a plain action, never both.
+        let mut actions: Vec<&str> = JOB_METHODS.iter().map(|(n, _)| *n).collect();
+        actions.extend(ACTIONS.iter().map(|(n, _)| *n));
+        for list in [METHODS, EVENTS, &actions] {
             let mut sorted = list.to_vec();
             sorted.sort_unstable();
             sorted.dedup();

@@ -234,6 +234,11 @@ fn result_reshaper(method: &str) -> Option<fn(Value) -> Value> {
         truenas::pools::EVENT => Some(truenas::pools::compact_list),
         // Dashboard root usage and the storage page's tree: ZFS properties as plain bytes.
         truenas::datasets::EVENT => Some(truenas::datasets::compact_list),
+        // The snapshots page: properties as numbers. `pool.snapshot.create` answers with the
+        // new snapshot, cut down the same way.
+        truenas::snapshots::EVENT | "pool.snapshot.create" => {
+            Some(truenas::snapshots::compact_list)
+        }
         _ => None,
     }
 }
@@ -389,7 +394,7 @@ impl Bridge {
             ));
         }
         let job = self.allow.job(&method);
-        let params = match job {
+        let params = match job.or_else(|| self.allow.action(&method)) {
             Some(check) => match check(&params) {
                 Some(params) => params,
                 None => {
@@ -1084,6 +1089,70 @@ mod tests {
         let got = call(&mut ws, 5, "app.redeploy", json!(["locked"])).await;
         assert_eq!(got["error"]["code"], "nas");
         assert_eq!(got["error"]["errname"], "EACCES");
+    }
+
+    /// #37: snapshot actions are plain calls whose params truelite rebuilds; their answers
+    /// come back like any call's, the new snapshot cut down like the list.
+    #[tokio::test]
+    async fn snapshot_actions_go_upstream_rebuilt_without_a_job() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        let refused = [
+            (
+                "pool.snapshot.create",
+                json!([{"dataset": "tank", "name": "x", "naming_schema": "a"}]),
+            ),
+            (
+                "pool.snapshot.delete",
+                json!(["tank@s1", {"recursive": true}]),
+            ),
+            ("pool.snapshot.delete", json!(["tank"])),
+        ];
+        for (id, (method, params)) in (1..).zip(refused) {
+            send(
+                &mut ws,
+                json!({"op": "call", "id": id, "method": method, "params": params}),
+            )
+            .await;
+            assert_eq!(next(&mut ws).await["error"]["code"], "bad_request");
+        }
+        send(
+            &mut ws,
+            json!({"op": "call", "id": 7, "method": "pool.snapshot.create",
+                "params": [{"dataset": "tank", "name": "s1", "recursive": true}]}),
+        )
+        .await;
+        assert_eq!(
+            next(&mut ws).await,
+            json!({"id": 7, "result": {"id": "tank@s1", "dataset": "tank", "snapshot_name": "s1",
+                "txg": 7, "used": 3}})
+        );
+        send(
+            &mut ws,
+            json!({"op": "call", "id": 8, "method": "pool.snapshot.delete", "params": ["tank@s1"]}),
+        )
+        .await;
+        assert_eq!(next(&mut ws).await, json!({"id": 8, "result": true}));
+        let reply = call(&mut ws, 9, "pool.snapshot.query").await;
+        assert_eq!(reply["result"][0]["used"], 3);
+        let sent: Vec<(String, Value)> = h
+            .mock
+            .requests()
+            .into_iter()
+            .filter(|c| c.method.starts_with("pool.snapshot.") || c.method == "core.subscribe")
+            .map(|c| (c.method, c.params))
+            .collect();
+        assert_eq!(
+            sent,
+            [
+                (
+                    "pool.snapshot.create".to_owned(),
+                    json!([{"dataset": "tank", "name": "s1", "recursive": true}])
+                ),
+                ("pool.snapshot.delete".to_owned(), json!(["tank@s1", {}])),
+                ("pool.snapshot.query".to_owned(), json!([])),
+            ]
+        );
     }
 
     /// #34: an update asks for the latest version with the browser's snapshot choice only.

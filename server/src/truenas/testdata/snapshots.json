@@ -1,0 +1,89 @@
+[
+  {
+    "id": "tank/media@manual-2026-11-19_10-00",
+    "name": "tank/media@manual-2026-11-19_10-00",
+    "pool": "tank",
+    "type": "SNAPSHOT",
+    "snapshot_name": "manual-2026-11-19_10-00",
+    "dataset": "tank/media",
+    "createtxg": "120345",
+    "properties": {
+      "used": {
+        "value": "1M",
+        "rawvalue": "1048576",
+        "source": "NONE",
+        "parsed": 1048576
+      },
+      "referenced": {
+        "value": "48.8G",
+        "rawvalue": "52428800000",
+        "source": "NONE",
+        "parsed": 52428800000
+      },
+      "creation": {
+        "value": "Thu Nov 19 10:00 2026",
+        "rawvalue": "1795082400",
+        "source": "NONE",
+        "parsed": 1795082400
+      }
+    }
+  },
+  {
+    "id": "tank/media@auto-2026-11-18_00-00",
+    "name": "tank/media@auto-2026-11-18_00-00",
+    "pool": "tank",
+    "type": "SNAPSHOT",
+    "snapshot_name": "auto-2026-11-18_00-00",
+    "dataset": "tank/media",
+    "createtxg": "119001",
+    "properties": {
+      "used": {
+        "value": "1M",
+        "rawvalue": "0",
+        "source": "NONE",
+        "parsed": 0
+      },
+      "referenced": {
+        "value": "48.8G",
+        "rawvalue": "52400000000",
+        "source": "NONE",
+        "parsed": 52400000000
+      },
+      "creation": {
+        "value": "Thu Nov 19 10:00 2026",
+        "rawvalue": "1794960000",
+        "source": "NONE",
+        "parsed": 1794960000
+      }
+    }
+  },
+  {
+    "id": "tank/media@auto-2026-11-17_00-00",
+    "name": "tank/media@auto-2026-11-17_00-00",
+    "pool": "tank",
+    "type": "SNAPSHOT",
+    "snapshot_name": "auto-2026-11-17_00-00",
+    "dataset": "tank/media",
+    "createtxg": "118000",
+    "properties": {
+      "used": {
+        "value": "1M",
+        "rawvalue": "204800",
+        "source": "NONE",
+        "parsed": 204800
+      },
+      "referenced": {
+        "value": "48.8G",
+        "rawvalue": "52300000000",
+        "source": "NONE",
+        "parsed": 52300000000
+      },
+      "creation": {
+        "value": "Thu Nov 19 10:00 2026",
+        "rawvalue": "1794873600",
+        "source": "NONE",
+        "parsed": 1794873600
+      }
+    }
+  }
+]

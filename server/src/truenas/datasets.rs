@@ -20,7 +20,7 @@ const PROPS: &[&str] = &["used", "available", "quota", "refquota"];
 
 /// A property object as bytes: its `parsed` number, else its `rawvalue` read as an integer.
 /// `None` for anything else (a missing or unreadable property is left out).
-fn bytes(prop: &Value) -> Option<u64> {
+pub(super) fn bytes(prop: &Value) -> Option<u64> {
     let prop = prop.as_object()?;
     prop.get("parsed")
         .and_then(Value::as_u64)

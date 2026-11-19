@@ -45,12 +45,23 @@ Error `code`s, with `message` always in plain words:
 
 A call is never sent twice: after a `timeout` or `reconnecting` it may or may not have run.
 
-## Actions (jobs)
+## Actions
 
-Actions are TrueNAS jobs (`JOB_METHODS` in `server/src/allowlist.rs`): today `app.start`,
-`app.stop` and `app.redeploy` (restart), each taking `[app_name]` and needing the `APPS_WRITE`
-role. The server checks their params strictly and rebuilds them (bad ones get `bad_request`),
-follows the job on the NAS and sends its progress under the call's `id` until the reply:
+Actions change something on the NAS. Each one is confirmed in a dialog in the web app, and the
+server checks its params strictly and rebuilds them from the checked values (bad ones get
+`bad_request`; options the web app never sends are refused, not dropped). There are two kinds.
+
+### Jobs
+
+TrueNAS jobs (`JOB_METHODS` in `server/src/allowlist.rs`), all needing `APPS_WRITE`:
+
+- `app.start`, `app.stop`, `app.redeploy` (restart): `[app_name]`.
+- `app.upgrade`: `[app_name]` or `[app_name, {"snapshot_hostpaths": bool}]`; sent as
+  `[app_name, {"app_version": "latest", "snapshot_hostpaths": …}]`, never with `values`.
+- `app.pull_images`: `[app_name]`; sent as `[app_name, {"redeploy": true}]`.
+
+The server follows the job on the NAS and sends its progress under the call's `id` until the
+reply:
 
 ```json
 → {"op": "call", "id": 7, "method": "app.stop", "params": ["plex"]}
@@ -66,6 +77,20 @@ follows the job on the NAS and sends its progress under the call's `id` until th
   (`errname` `EACCES`).
 - The job goes on on the NAS when the page or the socket closes, and after `reconnecting`: its
   outcome then shows in the `app.query` events.
+
+### Plain actions
+
+Methods that answer at once (`ACTIONS` in `server/src/allowlist.rs`): after the params check
+they go out like any call, with its timeout and no progress.
+
+- `pool.snapshot.create` (`SNAPSHOT_WRITE`): `[{"dataset": path, "name": name, "recursive":
+  bool}]` (`recursive` optional, default false). No naming schema, exclude list, properties or
+  VMware sync. The result is the new snapshot, cut down like `pool.snapshot.query`.
+- `pool.snapshot.delete` (`SNAPSHOT_DELETE`): `["dataset@name"]`; sent as `[id, {}]`: one
+  snapshot, never recursive or deferred. The result is `true`.
+
+Dataset paths and snapshot names must be ZFS names: letters, digits, `_ - : .` and inner
+spaces; names at most 200 characters.
 
 ## Subscriptions
 
@@ -145,6 +170,14 @@ and `used`, `available`, `quota`, `refquota` as plain byte counts. TrueNAS sends
 `{parsed, rawvalue, …}` objects; the server keeps `parsed`, or `rawvalue` read as an integer, or
 leaves the field out. Everything else (`children`, `user_properties`, `mountpoint`, other
 properties) is dropped. A `removed` event has only its `id`.
+
+**`pool.snapshot.query`**: snapshots taken or deleted through the API (needs `SNAPSHOT_READ`).
+Periodic snapshot tasks send no event: read the list again. Events cover every snapshot of the
+NAS; the web app keeps those of the dataset it shows. The call result and each event's `fields`
+are cut down the same way (`server/src/truenas/snapshots.rs`): `id`, `dataset`,
+`snapshot_name` as sent, `txg` (`createtxg` as a number), `used` and `referenced` as byte counts
+and `created` as seconds since the epoch (from the `creation` property), each left out when
+missing. Ask for those properties with `extra.properties`. A `removed` event has only its `id`.
 
 **`app.query`**: app changes (needs `APPS_READ`). TrueNAS sends the whole app on every change:
 its containers, ports and volumes (`active_workloads`), `portals`, the catalog `metadata` and
