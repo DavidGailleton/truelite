@@ -1,7 +1,8 @@
 <script lang="ts">
 	// One pool on the Storage page: status in words and colour, usable space, what is wrong, the
 	// scrub line, then its layout (vdevs and disks, plain words), opened when something in it needs
-	// a look. Read-only; the scrub button comes with #38.
+	// a look. Under the scrub line, its buttons (Check now, Pause, Resume, Stop: #38) for accounts
+	// with the Pool write role.
 	import type { ErrorBody } from '#lib/ws.js';
 	import {
 		GROUP_LABELS,
@@ -22,6 +23,9 @@
 		type Vdev
 	} from '#lib/pools.js';
 	import type { Tone } from '#lib/apps.js';
+	import { canScrub } from '#lib/scrub.js';
+	import { session } from '#lib/session.svelte.js';
+	import ScrubActions from './ScrubActions.svelte';
 	import Card from './Card.svelte';
 	import StatusPill from './StatusPill.svelte';
 	import UsageBar from './UsageBar.svelte';
@@ -43,6 +47,8 @@
 	/** States where the device is gone or unusable. */
 	const GONE = new Set(['FAULTED', 'UNAVAIL', 'REMOVED']);
 
+	// A dimmed card is paused (link down) or stale: no actions on what may be old.
+	const canAct = $derived(!dim && canScrub(session.user?.roles));
 	const groups = $derived(layout ? TOPOLOGY_GROUPS.filter((g) => layout[g].length > 0) : []);
 	const needsLook = $derived(layout ? topologyNeedsLook(layout) : false);
 </script>
@@ -81,6 +87,7 @@
 		{#if row.usage}<UsageBar usage={row.usage} name={row.name} />{/if}
 		{#if row.health.detail}<p>{row.health.detail}</p>{/if}
 		{#if row.scan}<p class="muted">{row.scan}</p>{/if}
+		<ScrubActions name={row.name} status={row.status} scan={row.scanState} {canAct} />
 
 		{#if layout}
 			<details open={needsLook}>

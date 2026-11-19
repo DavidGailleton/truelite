@@ -9,8 +9,12 @@
 //! (`testdata/pool_event.json`), so every one is optional.
 //!
 //! Event schema: <https://api.truenas.com/v25.10/api_events_pool.query.html> (role `POOL_READ`).
+//!
+//! Scrubs: [`scrub_param`] checks the params of the `pool.scrub.scrub` job (role `POOL_WRITE`;
+//! <https://api.truenas.com/v25.10/api_methods_pool.scrub.scrub.html>). Its START job lasts the
+//! whole scrub (middlewared TS-25.10.8 `plugins/pool_/scrub.py`); PAUSE and STOP end at once.
 
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 use super::reshape::keep_fields;
 
@@ -115,6 +119,29 @@ pub fn compact_list(mut result: Value) -> Value {
         }
     }
     result
+}
+
+/// Actions of `pool.scrub.scrub`. A paused scrub resumes with START.
+const SCRUB_ACTIONS: &[&str] = &["START", "PAUSE", "STOP"];
+
+/// A ZFS pool name: a letter, then letters, digits, `_`, `-`, `.` or `:`; at most 255 bytes.
+fn pool_name_ok(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && name.len() <= 255
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | ':'))
+}
+
+/// The params of `pool.scrub.scrub`: the browser sends `[pool]` or `[pool, action]`; rebuilt as
+/// `[pool, action]` (START when absent). Any other shape, action or name is refused.
+pub fn scrub_param(params: &Value) -> Option<Value> {
+    let (name, action) = match params.as_array()?.as_slice() {
+        [Value::String(name)] => (name, "START"),
+        [Value::String(name), Value::String(action)] => (name, action.as_str()),
+        _ => return None,
+    };
+    let action = SCRUB_ACTIONS.iter().find(|&&a| a == action)?;
+    pool_name_ok(name).then(|| json!([name, action]))
 }
 
 #[cfg(test)]
@@ -230,5 +257,50 @@ mod tests {
         assert_eq!(page[0]["id"], 1);
         assert!(page[0]["topology"]["data"][0].get("stats").is_none());
         assert_eq!(page[1], 5);
+    }
+
+    #[test]
+    fn scrub_params_are_rebuilt_from_a_name_and_an_action() {
+        assert_eq!(
+            scrub_param(&json!(["tank"])),
+            Some(json!(["tank", "START"]))
+        );
+        for action in ["START", "PAUSE", "STOP"] {
+            assert_eq!(
+                scrub_param(&json!(["tank", action])),
+                Some(json!(["tank", action]))
+            );
+        }
+        assert_eq!(
+            scrub_param(&json!(["Data_1.a:b-c", "STOP"])),
+            Some(json!(["Data_1.a:b-c", "STOP"]))
+        );
+        let long = "a".repeat(255);
+        assert!(scrub_param(&json!([long])).is_some());
+    }
+
+    #[test]
+    fn other_scrub_params_are_refused() {
+        for bad in [
+            json!([]),
+            json!("tank"),
+            json!({"name": "tank"}),
+            json!(["tank", "start"]),
+            json!(["tank", "RESUME"]),
+            json!(["tank", "START", 1]),
+            json!(["tank", null]),
+            json!([1]),
+            json!([""]),
+            json!(["1tank"]),
+            json!(["tank/ds"]),
+            json!(["tank@s"]),
+            json!(["tank pool"]),
+            json!(["tank;rm"]),
+            json!(["-tank"]),
+            json!(["tänk"]),
+            json!(["a".repeat(256)]),
+        ] {
+            assert_eq!(scrub_param(&bad), None, "{bad}");
+        }
     }
 }

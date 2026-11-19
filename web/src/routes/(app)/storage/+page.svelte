@@ -3,7 +3,8 @@
 	// data check and layout (vdevs and disks). Live through `pool.query` / `pool.scan` events (the
 	// store is shared with the dashboard card); layouts are read here only, again after each pool
 	// change. Under them, the dataset tree with each dataset's space (its own card and store),
-	// each linking to its snapshots (#37). Scrubs (#38) and disk health (#39) come next.
+	// each linking to its snapshots (#37). Each pool card can start, pause and stop a data check
+	// (#38). Disk health (#39) comes next.
 	import { cardView } from '#lib/card-state.js';
 	import { connection } from '#lib/nas.svelte.js';
 	import { layouts, poolRowsNow, pools, usePoolLayouts, usePools } from '#lib/pools.svelte.js';

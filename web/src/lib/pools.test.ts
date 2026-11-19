@@ -322,5 +322,18 @@ describe('poolRows', () => {
 			['apps', 'Healthy', true]
 		]);
 		expect(rows[0].scan).toBe('Last checked 2 days ago');
+		expect(rows[0]).toMatchObject({ status: 'ONLINE', scanState: { kind: 'scrub' } });
+	});
+
+	it('says when a pool was never checked, unless it is offline', () => {
+		const rows = poolRows(
+			[pool({ scan: null }), pool({ id: 2, name: 'old', status: 'FAULTED', scan: null })],
+			new Map(),
+			NOW
+		);
+		expect(rows.map((r) => [r.name, r.scan])).toEqual([
+			['old', null],
+			['tank', 'Never checked']
+		]);
 	});
 });

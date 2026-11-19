@@ -1091,6 +1091,51 @@ mod tests {
         assert_eq!(got["error"]["errname"], "EACCES");
     }
 
+    /// #38: a scrub is a job whose params truelite rebuilds; bad actions and names never reach
+    /// the NAS.
+    #[tokio::test]
+    async fn scrub_jobs_go_upstream_rebuilt() {
+        let h = Harness::new().await;
+        let mut ws = h.open().await;
+        for (id, params) in (1..).zip([
+            json!(["tank", "DESTROY"]),
+            json!(["tank; rm -rf /", "STOP"]),
+            json!(["tank", "pause"]),
+            json!([{"name": "tank"}]),
+        ]) {
+            send(
+                &mut ws,
+                json!({"op": "call", "id": id, "method": "pool.scrub.scrub", "params": params}),
+            )
+            .await;
+            assert_eq!(next(&mut ws).await["error"]["code"], "bad_request");
+        }
+        send(
+            &mut ws,
+            json!({"op": "call", "id": 7, "method": "pool.scrub.run", "params": ["tank", 0]}),
+        )
+        .await;
+        assert_eq!(next(&mut ws).await["error"]["code"], "not_allowed");
+        send(
+            &mut ws,
+            json!({"op": "call", "id": 8, "method": "pool.scrub.scrub", "params": ["tank"]}),
+        )
+        .await;
+        assert_eq!(
+            next(&mut ws).await,
+            json!({"id": 8, "progress": {"percent": 50, "description": "Working on tank"}})
+        );
+        assert_eq!(next(&mut ws).await, json!({"id": 8, "result": null}));
+        let sent: Vec<Value> = h
+            .mock
+            .requests()
+            .into_iter()
+            .filter(|c| c.method.starts_with("pool.scrub."))
+            .map(|c| c.params)
+            .collect();
+        assert_eq!(sent, [json!(["tank", "START"])]);
+    }
+
     /// #37: snapshot actions are plain calls whose params truelite rebuilds; their answers
     /// come back like any call's, the new snapshot cut down like the list.
     #[tokio::test]

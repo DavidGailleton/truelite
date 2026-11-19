@@ -104,6 +104,9 @@ const JOB_METHODS: &[(&str, ActionCheck)] = &[
         "app.pull_images",
         crate::truenas::apps::app_pull_images_param,
     ),
+    // Storage page: Check now, Pause, Resume, Stop a scrub (POOL_WRITE). Params
+    // `[pool, "START"|"PAUSE"|"STOP"]`; START's job lasts the whole scrub.
+    ("pool.scrub.scrub", crate::truenas::pools::scrub_param),
 ];
 
 /// Actions that are plain calls (no job): each with the check that rebuilds its params. The
@@ -282,6 +285,7 @@ mod tests {
             "restore",
             ".pull",
             ".rollback",
+            "scrub",
         ];
         // Reads whose name looks like an action: checked one by one in the TrueNAS docs.
         const READS: &[&str] = &["app.upgrade_summary"];
@@ -350,6 +354,27 @@ mod tests {
             );
         }
         assert!(a.method("pool.snapshot.query") && a.event("pool.snapshot.query").is_some());
+        let scrub = a.job("pool.scrub.scrub").unwrap();
+        assert_eq!(
+            scrub(&serde_json::json!(["tank", "PAUSE"])),
+            Some(serde_json::json!(["tank", "PAUSE"]))
+        );
+        assert!(!a.method("pool.scrub.scrub") && a.action("pool.scrub.scrub").is_none());
+        for near in [
+            "pool.scrub.run",
+            "pool.scrub.create",
+            "pool.scrub.update",
+            "pool.scrub.delete",
+            "pool.scrub.query",
+            "pool.scrub",
+            "pool.scrub.scrub.",
+            "zpool.scrub.run",
+        ] {
+            assert!(
+                !a.method(near) && a.job(near).is_none() && a.action(near).is_none(),
+                "{near:?}"
+            );
+        }
         assert!(a.action("app.start").is_none());
         assert!(
             Allowlist::new(&[], &[])

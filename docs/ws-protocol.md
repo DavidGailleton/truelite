@@ -53,12 +53,18 @@ server checks its params strictly and rebuilds them from the checked values (bad
 
 ### Jobs
 
-TrueNAS jobs (`JOB_METHODS` in `server/src/allowlist.rs`), all needing `APPS_WRITE`:
+TrueNAS jobs (`JOB_METHODS` in `server/src/allowlist.rs`). The app jobs need `APPS_WRITE`:
 
 - `app.start`, `app.stop`, `app.redeploy` (restart): `[app_name]`.
 - `app.upgrade`: `[app_name]` or `[app_name, {"snapshot_hostpaths": bool}]`; sent as
   `[app_name, {"app_version": "latest", "snapshot_hostpaths": …}]`, never with `values`.
 - `app.pull_images`: `[app_name]`; sent as `[app_name, {"redeploy": true}]`.
+- `pool.scrub.scrub` (`POOL_WRITE`): `[pool]` or `[pool, "START"|"PAUSE"|"STOP"]`; sent as
+  `[pool, action]` (START when absent, which also resumes a paused scrub). The pool name is a
+  ZFS pool name (a letter, then letters, digits, `_ - . :`). START's job lasts the **whole
+  scrub** (hours) and ends when it finishes, pauses or is stopped; follow the scrub through the
+  `pool.scan` event rather than this reply. `pool.scrub.run` is not allowed: it does nothing
+  unless a scrub is due.
 
 The server follows the job on the NAS and sends its progress under the call's `id` until the
 reply:

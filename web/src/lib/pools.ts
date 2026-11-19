@@ -194,7 +194,14 @@ export const FULL_CRITICAL = 90;
 export const fullLevel = (percent: number): Level =>
 	percent >= FULL_CRITICAL ? 'critical' : percent >= FULL_WARNING ? 'warning' : 'ok';
 
-const UNAVAILABLE = new Set(['FAULTED', 'UNAVAIL', 'OFFLINE', 'REMOVED', 'SUSPENDED']);
+/** ZFS states where the pool can't be reached. */
+export const UNAVAILABLE: ReadonlySet<string> = new Set([
+	'FAULTED',
+	'UNAVAIL',
+	'OFFLINE',
+	'REMOVED',
+	'SUSPENDED'
+]);
 /** `status_code`s that set `warning` but need no action from the user here. */
 const BENIGN_CODES = new Set(['OK', 'FEAT_DISABLED']);
 const RANK: Record<Level, number> = { critical: 0, warning: 1, ok: 2 };
@@ -318,6 +325,10 @@ export function scanLabel(scan: Scan | null, now: number): string | null {
 export interface PoolRow {
 	id: number;
 	name: string;
+	/** ZFS state, upper case. */
+	status: string;
+	/** The last or running scrub or resilver; `null` when the pool was never checked. */
+	scanState: Scan | null;
 	usage: Usage | null;
 	health: Health;
 	scan: string | null;
@@ -335,9 +346,11 @@ export function poolRows(
 			return {
 				id: p.id,
 				name: p.name,
+				status: p.status,
+				scanState: p.scan,
 				usage: u,
 				health: poolHealth(p, u?.percent ?? null),
-				scan: scanLabel(p.scan, now)
+				scan: p.scan || UNAVAILABLE.has(p.status) ? scanLabel(p.scan, now) : 'Never checked'
 			};
 		})
 	);
