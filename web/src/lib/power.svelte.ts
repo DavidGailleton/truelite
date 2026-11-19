@@ -37,6 +37,8 @@ export function powerBusy(): boolean {
 }
 
 export function startPower(action: PowerAction): void {
+	// No `updateBusy()` check here: update-run imports this module, so that would be a cycle.
+	// PowerCard disables its buttons while an update installs.
 	if (powerBusy()) return;
 	const mine = ++generation;
 	power.run = { phase: 'running', action };

@@ -14,7 +14,7 @@
 	import { formatUptime, versionLabel } from '#lib/system.js';
 	import { poolRowsNow, usePools } from '#lib/pools.svelte.js';
 	import { system, uptimeNow, useSystemInfo } from '#lib/system.svelte.js';
-	import { availableVersion, update, useUpdateStatus } from '#lib/update.svelte.js';
+	import { updateBannerShown, useUpdateStatus } from '#lib/update.svelte.js';
 
 	useSystemInfo();
 	const poolTopics = usePools();
@@ -24,7 +24,7 @@
 
 	// Only an available update, or one installed and waiting for a restart, shows here; details
 	// and any error live on the System page.
-	const updateShown = $derived(availableVersion() !== null || update.status?.kind === 'restart');
+	const updateShown = $derived(updateBannerShown());
 
 	// A warning or critical alert goes first: it often explains the pool or app below it.
 	const worstAlert = $derived(alertSummary()?.worst ?? null);

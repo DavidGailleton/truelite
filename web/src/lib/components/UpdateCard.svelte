@@ -15,6 +15,7 @@
 	import {
 		dismissUpdateRun,
 		installUpdate,
+		resumeUpdate,
 		updateBusy,
 		updateRun
 	} from '#lib/update-run.svelte.js';
@@ -62,6 +63,15 @@
 	$effect(() => {
 		if (asking !== null && (!canInstall || status?.newVersion !== asking)) asking = null;
 	});
+	// Same for a pre-check warning: it is about the version the user confirmed, not a newer one.
+	$effect(() => {
+		if (
+			run?.phase === 'warning' &&
+			(status?.kind !== 'available' || status.newVersion !== run.status.newVersion)
+		) {
+			dismissUpdateRun();
+		}
+	});
 
 	function ask() {
 		dismissUpdateRun();
@@ -72,12 +82,6 @@
 	function confirmInstall() {
 		if (status && asking !== null) installUpdate(status, { reboot });
 		asking = null;
-	}
-
-	function acceptWarning() {
-		if (status && run?.phase === 'warning') {
-			installUpdate(status, { reboot: run.reboot, resume: true });
-		}
 	}
 </script>
 
@@ -201,7 +205,7 @@
 		text={run.message}
 		confirm="Install anyway"
 		destructive
-		onconfirm={acceptWarning}
+		onconfirm={resumeUpdate}
 		oncancel={dismissUpdateRun}
 	/>
 {/if}

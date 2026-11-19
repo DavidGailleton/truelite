@@ -2,16 +2,20 @@
 // survives navigation. Cleared on logout (a restart ends the NAS session, so it clears too).
 // The wording and the failure rules live in update.ts.
 import { nas, onNasClose } from './nas.svelte';
+import { powerBusy } from './power.svelte';
 import { beginRestartWait, onRestartEnd } from './restart.svelte';
 import { system } from './system.svelte';
 import { runFailure, updateRunCall, type UpdateStatus } from './update';
-import { loadUpdateStatus } from './update.svelte';
+import { loadUpdateStatus, update } from './update.svelte';
 import { failure, type JobProgress } from './ws';
 
 export type UpdateRun =
 	| { phase: 'running'; reboot: boolean; progress: JobProgress | null }
-	/** A pre-check warning: the user may install anyway (`resume`). */
-	| { phase: 'warning'; reboot: boolean; message: string }
+	/**
+	 * A pre-check warning: the user may install anyway ({@link resumeUpdate}). `status` is the
+	 * offer the user confirmed: going on installs that one, never a newer one.
+	 */
+	| { phase: 'warning'; status: UpdateStatus; reboot: boolean; message: string }
 	/** Installed; the NAS restarts on its own. */
 	| { phase: 'restarting' }
 	/** Installed without a restart: `update.status` now says "restart needed". */
@@ -41,13 +45,33 @@ export function updateBusy(): boolean {
 	return phase === 'running' || phase === 'warning' || phase === 'restarting';
 }
 
-/** Installs what `status` offers; `resume` accepts a warning the NAS gave on the last try. */
-export function installUpdate(
-	status: UpdateStatus,
-	{ reboot, resume = false }: { reboot: boolean; resume?: boolean }
-): void {
+/**
+ * Installs what `status` offers. Nothing starts while a job runs or waits for the user, or while
+ * a restart or shutdown is under way.
+ */
+export function installUpdate(status: UpdateStatus, { reboot }: { reboot: boolean }): void {
+	if (updateBusy() || powerBusy()) return;
+	run(status, reboot, false);
+}
+
+/**
+ * Accepts the warning the NAS gave: installs the offer the user confirmed, with `resume`. If
+ * the NAS now offers something else (or nothing), the warning is dropped instead.
+ */
+export function resumeUpdate(): void {
+	const current = updateRun.run;
+	if (current?.phase !== 'warning' || powerBusy()) return;
+	const now = update.status;
+	if (now?.kind !== 'available' || now.newVersion !== current.status.newVersion) {
+		dismissUpdateRun();
+		return;
+	}
+	run(current.status, current.reboot, true);
+}
+
+function run(status: UpdateStatus, reboot: boolean, resume: boolean): void {
 	const call = updateRunCall(status, { reboot, resume });
-	if (!call || updateRun.run?.phase === 'running') return;
+	if (!call) return;
 	const mine = ++generation;
 	updateRun.run = { phase: 'running', reboot, progress: null };
 	let percent: number | null = null;
@@ -72,7 +96,7 @@ export function installUpdate(
 				const end = runFailure(failure(e), { reboot, percent });
 				updateRun.run =
 					end.kind === 'warning'
-						? { phase: 'warning', reboot, message: end.message }
+						? { phase: 'warning', status, reboot, message: end.message }
 						: end.kind === 'restarting'
 							? { phase: 'restarting' }
 							: { phase: 'failed', message: end.message };

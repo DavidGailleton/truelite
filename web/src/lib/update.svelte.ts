@@ -29,6 +29,14 @@ export function availableVersion(): string | null {
 	return update.status?.kind === 'available' ? update.status.newVersion : null;
 }
 
+/**
+ * Whether the dashboard shows the update banner: an update on offer, or one installed and
+ * waiting for a restart. Reactive.
+ */
+export function updateBannerShown(): boolean {
+	return availableVersion() !== null || update.status?.kind === 'restart';
+}
+
 /** Asks the NAS for the update status. */
 export function loadUpdateStatus(): void {
 	const mine = ++request;
