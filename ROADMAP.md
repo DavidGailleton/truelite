@@ -69,7 +69,7 @@ Pools, datasets, snapshots, scrubs, disks and SMART. Destructive actions need ty
 - [x] #36 Dataset tree with usage
 - [x] #37 Snapshots: list, create, delete
 - [x] #38 Scrub status and start
-- [ ] #39 Disks and temperatures (SMART is not in the 25.10 API, see #61)
+- [x] #39 Disks and temperatures (SMART is not in the 25.10 API, see #61)
 
 ## Phase 6 — Updates & reboot
 
