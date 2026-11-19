@@ -6,8 +6,12 @@
 	import { page } from '$app/state';
 	import Icon from '#lib/components/Icon.svelte';
 	import Logo from '#lib/components/Logo.svelte';
+	import RestartScreen from '#lib/components/RestartScreen.svelte';
 	import ThemeToggle from '#lib/components/ThemeToggle.svelte';
 	import { loginWithCode, loginWithPassword, safeNext, type LoginResult } from '#lib/login.js';
+	import { pageVisible } from '#lib/nas.svelte.js';
+	import { backText, CERT_CHANGED, pollDelay, probeNas } from '#lib/restart.js';
+	import { endRestartWait, restart } from '#lib/restart.svelte.js';
 	import { setSession } from '#lib/session.svelte.js';
 
 	let step = $state<'password' | 'code'>('password');
@@ -22,6 +26,41 @@
 	let codeInput = $state<HTMLInputElement>();
 
 	const ended = $derived(page.url.searchParams.get('ended') === '1');
+
+	/** Sent here by a NAS restart that ended the session: wait for the NAS before the form. */
+	const waiting = $derived(page.url.searchParams.get('restarting') === '1' && !!restart.wait);
+	/** The NAS answered again after a restart: say so above the form. */
+	let back = $state<{ host: string | null } | null>(null);
+
+	// Ask whether the NAS is back, paced by restart.ts; paused while the page is hidden.
+	$effect(() => {
+		const wait = restart.wait;
+		if (!waiting || !wait || !pageVisible()) return;
+		let stopped = false;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const check = async () => {
+			const reach = await probeNas();
+			if (stopped) return;
+			if (reach === 'up' || reach === 'cert_mismatch') {
+				back = { host: wait.host };
+				if (reach === 'cert_mismatch') error = CERT_CHANGED;
+				endRestartWait();
+				focusStep();
+				return;
+			}
+			timer = setTimeout(check, pollDelay(wait.kind, Date.now() - wait.since));
+		};
+		check();
+		return () => {
+			stopped = true;
+			clearTimeout(timer);
+		};
+	});
+
+	function stopWaiting() {
+		endRestartWait();
+		focusStep();
+	}
 
 	/** Focuses the first field a step needs once it is on screen. */
 	async function focusStep() {
@@ -85,100 +124,112 @@
 </script>
 
 <svelte:head>
-	<title>Log in · truelite</title>
+	<!-- The restart screen names the page itself. -->
+	{#if !waiting}
+		<title>Log in · truelite</title>
+	{/if}
 </svelte:head>
 
-<main class="page">
-	<ThemeToggle />
-	<div class="card">
-		<header>
-			<Logo size={40} />
-			<h1>Log in</h1>
-			<p class="lead">
-				{step === 'password'
-					? 'Use your TrueNAS account.'
-					: 'Enter the code from your authenticator app.'}
-			</p>
-		</header>
+{#if waiting && restart.wait}
+	<RestartScreen wait={restart.wait} onstop={stopWaiting} />
+{:else}
+	<main class="page">
+		<ThemeToggle />
+		<div class="card">
+			<header>
+				<Logo size={40} />
+				<h1>Log in</h1>
+				<p class="lead">
+					{step === 'password'
+						? 'Use your TrueNAS account.'
+						: 'Enter the code from your authenticator app.'}
+				</p>
+			</header>
 
-		{#if ended && !error}
-			<p class="notice" role="status">
-				<Icon name="info" size={16} />
-				<span>Your session ended. Log in again.</span>
-			</p>
-		{/if}
-
-		<form method="post" onsubmit={submit}>
-			{#if step === 'password'}
-				<label class="field">
-					<span>User name</span>
-					<input
-						bind:this={usernameInput}
-						bind:value={username}
-						name="username"
-						autocomplete="username"
-						autocapitalize="none"
-						spellcheck="false"
-						required
-						aria-invalid={error ? 'true' : undefined}
-						aria-describedby={error ? 'login-error' : undefined}
-					/>
-				</label>
-				<label class="field">
-					<span>Password</span>
-					<input
-						bind:this={passwordInput}
-						bind:value={password}
-						type="password"
-						name="password"
-						autocomplete="current-password"
-						required
-						aria-invalid={error ? 'true' : undefined}
-						aria-describedby={error ? 'login-error' : undefined}
-					/>
-				</label>
-			{:else}
-				<!-- Hidden user name: password managers file the code under the right account. -->
-				<input type="hidden" name="username" value={username} autocomplete="username" />
-				<label class="field">
-					<span>Code</span>
-					<input
-						bind:this={codeInput}
-						bind:value={() => code, (v) => (code = v.replace(/\s+/g, ''))}
-						name="code"
-						inputmode="numeric"
-						autocomplete="one-time-code"
-						pattern={'[0-9]{6,8}'}
-						required
-						aria-invalid={error ? 'true' : undefined}
-						aria-describedby={error ? 'login-error' : undefined}
-					/>
-				</label>
-			{/if}
-
-			{#if error}
-				<p class="alert" id="login-error" role="alert">
-					<Icon name="circle-alert" size={16} />
-					<span>{error}</span>
+			{#if back && !error}
+				<p class="notice" role="status">
+					<Icon name="info" size={16} />
+					<span>{backText(back.host)}</span>
+				</p>
+			{:else if ended && !error}
+				<p class="notice" role="status">
+					<Icon name="info" size={16} />
+					<span>Your session ended. Log in again.</span>
 				</p>
 			{/if}
 
-			<button class="primary" type="submit" disabled={busy} aria-busy={busy}>
+			<form method="post" onsubmit={submit}>
 				{#if step === 'password'}
-					{busy ? 'Logging in…' : 'Log in'}
+					<label class="field">
+						<span>User name</span>
+						<input
+							bind:this={usernameInput}
+							bind:value={username}
+							name="username"
+							autocomplete="username"
+							autocapitalize="none"
+							spellcheck="false"
+							required
+							aria-invalid={error ? 'true' : undefined}
+							aria-describedby={error ? 'login-error' : undefined}
+						/>
+					</label>
+					<label class="field">
+						<span>Password</span>
+						<input
+							bind:this={passwordInput}
+							bind:value={password}
+							type="password"
+							name="password"
+							autocomplete="current-password"
+							required
+							aria-invalid={error ? 'true' : undefined}
+							aria-describedby={error ? 'login-error' : undefined}
+						/>
+					</label>
 				{:else}
-					{busy ? 'Checking…' : 'Verify'}
+					<!-- Hidden user name: password managers file the code under the right account. -->
+					<input type="hidden" name="username" value={username} autocomplete="username" />
+					<label class="field">
+						<span>Code</span>
+						<input
+							bind:this={codeInput}
+							bind:value={() => code, (v) => (code = v.replace(/\s+/g, ''))}
+							name="code"
+							inputmode="numeric"
+							autocomplete="one-time-code"
+							pattern={'[0-9]{6,8}'}
+							required
+							aria-invalid={error ? 'true' : undefined}
+							aria-describedby={error ? 'login-error' : undefined}
+						/>
+					</label>
 				{/if}
-			</button>
 
-			{#if step === 'code'}
-				<button class="text" type="button" onclick={useAnotherAccount} disabled={busy}>
-					Use another account
+				{#if error}
+					<p class="alert" id="login-error" role="alert">
+						<Icon name="circle-alert" size={16} />
+						<span>{error}</span>
+					</p>
+				{/if}
+
+				<button class="primary" type="submit" disabled={busy} aria-busy={busy}>
+					{#if step === 'password'}
+						{busy ? 'Logging in…' : 'Log in'}
+					{:else}
+						{busy ? 'Checking…' : 'Verify'}
+					{/if}
 				</button>
-			{/if}
-		</form>
-	</div>
-</main>
+
+				{#if step === 'code'}
+					<button class="text" type="button" onclick={useAnotherAccount} disabled={busy}>
+						Use another account
+					</button>
+				{/if}
+			</form>
+		</div>
+	</main>
+{/if}
 
 <style>
 	.page {

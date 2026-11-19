@@ -3,6 +3,8 @@
 // The wording and the outcome rules live in power.ts.
 import { nas, onNasClose } from './nas.svelte';
 import { powerCall, powerOutcome, type PowerAction } from './power';
+import { beginRestartWait } from './restart.svelte';
+import { system } from './system.svelte';
 import { failure } from './ws';
 
 export type PowerRun =
@@ -34,10 +36,12 @@ export function startPower(action: PowerAction): void {
 	const end = (error: ReturnType<typeof failure> | null) => {
 		if (mine !== generation) return;
 		const outcome = powerOutcome(action, error);
-		power.run =
-			outcome.kind === 'going-down'
-				? { phase: 'going-down', action }
-				: { phase: 'failed', message: outcome.message };
+		if (outcome.kind === 'going-down') {
+			power.run = { phase: 'going-down', action };
+			beginRestartWait(action, system.info?.hostname ?? null);
+		} else {
+			power.run = { phase: 'failed', message: outcome.message };
+		}
 	};
 	nas()
 		.call(call.method, call.params, { timeout: null })

@@ -2,6 +2,8 @@
 // survives navigation. Cleared on logout (a restart ends the NAS session, so it clears too).
 // The wording and the failure rules live in update.ts.
 import { nas, onNasClose } from './nas.svelte';
+import { beginRestartWait } from './restart.svelte';
+import { system } from './system.svelte';
 import { runFailure, updateRunCall, type UpdateStatus } from './update';
 import { loadUpdateStatus } from './update.svelte';
 import { failure, type JobProgress } from './ws';
@@ -54,7 +56,8 @@ export function installUpdate(
 			() => {
 				if (mine !== generation) return;
 				updateRun.run = reboot ? { phase: 'restarting' } : { phase: 'installed' };
-				if (!reboot) loadUpdateStatus();
+				if (reboot) waitForRestart();
+				else loadUpdateStatus();
 			},
 			(e: unknown) => {
 				if (mine !== generation) return;
@@ -65,8 +68,13 @@ export function installUpdate(
 						: end.kind === 'restarting'
 							? { phase: 'restarting' }
 							: { phase: 'failed', message: end.message };
+				if (end.kind === 'restarting') waitForRestart();
 			}
 		);
+}
+
+function waitForRestart(): void {
+	beginRestartWait('reboot', system.info?.hostname ?? null);
 }
 
 /** Forgets a failed run, a declined warning or an "installed" note. */

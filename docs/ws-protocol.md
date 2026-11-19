@@ -276,3 +276,12 @@ sent). Key order and spaces do not matter.
 - Any other close: reconnect with backoff; the session may still be alive.
 
 The server pings every 30 s; browsers answer on their own.
+
+## Waiting for a restart (`GET /api/nas`)
+
+A NAS restart always ends the session (the NAS forgets truelite's token), so the page waiting for
+the NAS asks over plain HTTP, without a session: `GET /api/nas` answers
+`{"nas": "up" | "down" | "cert_mismatch"}`, or 503 when no NAS is configured. The server opens a
+socket to the NAS (TCP, pinned TLS, WebSocket upgrade, no login) within 3 s and closes it. One
+probe runs at a time and its answer is reused for 2 s, so any number of polling pages open at most
+one NAS socket per 2 s.

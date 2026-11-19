@@ -3,19 +3,44 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import AppShell from '#lib/components/AppShell.svelte';
-	import { connection } from '#lib/nas.svelte.js';
+	import RestartScreen from '#lib/components/RestartScreen.svelte';
+	import { connection, nas } from '#lib/nas.svelte.js';
+	import { restartLoginUrl } from '#lib/restart.js';
+	import { endRestartWait, restart } from '#lib/restart.svelte.js';
 	import { endSession, loadSession, session } from '#lib/session.svelte.js';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
 
 	// The session ended while in use (expired, logged out elsewhere, server restarted): log in
-	// again, then come back to this page.
+	// again, then come back to this page. During a NAS restart the login page first waits for
+	// the NAS (a restart always ends the session: the NAS forgets truelite's token).
 	$effect(() => {
 		if (connection.status !== 'logged-out') return;
-		const next = encodeURIComponent(page.url.pathname + page.url.search + page.url.hash);
+		const here = page.url.pathname + page.url.search + page.url.hash;
 		endSession();
-		goto(`/login?ended=1&next=${next}`, { replaceState: true });
+		const to = restart.wait
+			? restartLoginUrl(here)
+			: `/login?ended=1&next=${encodeURIComponent(here)}`;
+		goto(to, { replaceState: true });
+	});
+
+	// Open the connection even while the restart screen hides the shell (after a reload): its
+	// status says when the session ends.
+	$effect(() => {
+		nas();
+	});
+
+	// The NAS link came back with the session still valid: the NAS did not restart after all.
+	// Only a return from a drop counts: right after "Restart" the link is still up.
+	let dropped = false;
+	$effect(() => {
+		const status = connection.status;
+		if (status === 'nas-reconnecting' || status === 'offline') dropped = true;
+		else if (status === 'up' && dropped) {
+			dropped = false;
+			if (restart.wait) endRestartWait();
+		}
 	});
 
 	// The server was unreachable when the page opened: learn who is logged in once it answers.
@@ -24,6 +49,10 @@
 	});
 </script>
 
-<AppShell>
-	{@render children()}
-</AppShell>
+{#if restart.wait}
+	<RestartScreen wait={restart.wait} onstop={endRestartWait} />
+{:else}
+	<AppShell>
+		{@render children()}
+	</AppShell>
+{/if}

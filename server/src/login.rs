@@ -28,7 +28,9 @@ use crate::sessions::{
     Key, LOGOUT_TIMEOUT, SessionId, SessionInfo, SessionStore, cookie, named_cookie, set_cookie,
     spawn_every,
 };
-use crate::truenas::{self, AuthFailure, Endpoint, LoginStep, PendingOtp, Secret, SessionOptions};
+use crate::truenas::{
+    self, AuthFailure, Endpoint, LoginStep, PendingOtp, Reach, Secret, SessionOptions,
+};
 
 /// Cookie holding the ticket of a login waiting for its one-time code.
 pub const OTP_COOKIE: &str = "truelite-otp";
@@ -40,6 +42,11 @@ const MAX_PENDING: usize = 8;
 const MAX_WRONG_CODES: u8 = 3;
 /// Bound on one login step, connection included.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(20);
+/// Bound on one reachability probe (`GET /api/nas`).
+const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+/// How long a probe's answer is reused, so polling pages never open more than one NAS socket
+/// per period between them.
+const PROBE_REUSE: Duration = Duration::from_secs(2);
 
 /// A login waiting for its one-time code.
 struct Pending {
@@ -66,6 +73,8 @@ struct Inner {
     limiter: RateLimiter,
     pending: Mutex<HashMap<Key, Pending>>,
     rng: SystemRandom,
+    /// Last probe and when it ended. Held across the probe, so callers share one.
+    probe: tokio::sync::Mutex<Option<(Instant, Reach)>>,
 }
 
 impl Login {
@@ -78,6 +87,7 @@ impl Login {
                 limiter: RateLimiter::new(limits),
                 pending: Mutex::new(HashMap::new()),
                 rng: SystemRandom::new(),
+                probe: tokio::sync::Mutex::new(None),
             }),
         }
     }
@@ -139,6 +149,21 @@ impl Login {
     pub fn spawn_sweeper(&self, every: Duration) -> tokio::task::JoinHandle<()> {
         let login = self.clone();
         spawn_every(every, move |now| login.sweep_at(now))
+    }
+
+    /// Whether the NAS answers, probed at most once per [`PROBE_REUSE`]: concurrent callers
+    /// wait for the probe under way and share its answer.
+    async fn reach(&self) -> Result<Reach, LoginError> {
+        let nas = self.nas()?;
+        let mut last = self.inner.probe.lock().await;
+        if let Some((at, reach)) = *last
+            && at.elapsed() < PROBE_REUSE
+        {
+            return Ok(reach);
+        }
+        let reach = nas.probe(PROBE_TIMEOUT).await;
+        *last = Some((Instant::now(), reach));
+        Ok(reach)
     }
 
     fn nas(&self) -> Result<&Endpoint, LoginError> {
@@ -295,6 +320,17 @@ pub struct PasswordForm {
 #[derive(Deserialize)]
 pub struct OtpForm {
     code: String,
+}
+
+/// `GET /api/nas`: whether the NAS answers (`{"nas": "up" | "down" | "cert_mismatch"}`), for
+/// the page waiting for a restart. No session needed: a restart ends it.
+pub async fn reachability(State(login): State<Login>) -> Result<Response, LoginError> {
+    let reach = login.reach().await?;
+    Ok((
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(json!({ "nas": reach.as_str() })),
+    )
+        .into_response())
 }
 
 /// Logs in with a user name and password.
@@ -756,5 +792,60 @@ mod tests {
         let r = h.password("admin", "secret").await;
         assert_eq!(r.status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(r.cookie(COOKIE), None);
+    }
+
+    fn state_for(nas: Option<Endpoint>) -> AppState {
+        AppState {
+            sessions: SessionStore::new(StoreOptions::default()),
+            login: Login::new(nas, SessionOptions::default(), LimitOptions::default()),
+            allowlist: crate::allowlist::Allowlist::default(),
+            origins: crate::origin::Origins::default(),
+        }
+    }
+
+    async fn probe(state: &AppState) -> Reply {
+        let req = Request::get("/api/nas").body(Body::empty()).unwrap();
+        send(crate::router(state.clone()), req, CLIENT).await
+    }
+
+    #[tokio::test]
+    async fn api_nas_says_up_and_shares_one_probe() {
+        let h = Harness::new().await;
+        let (a, b) = tokio::join!(probe(&h.state), probe(&h.state));
+        for r in [&a, &b] {
+            assert_eq!(r.status, StatusCode::OK);
+            assert_eq!(r.body, json!({ "nas": "up" }));
+        }
+        let again = probe(&h.state).await;
+        assert_eq!(again.body["nas"], "up");
+        // Concurrent and back-to-back calls reuse one probe.
+        assert_eq!(h.mock.conns(), 1);
+        // No login happened: the probe only opens the socket.
+        assert!(h.mock.calls().is_empty());
+    }
+
+    #[tokio::test]
+    async fn api_nas_says_down_when_the_nas_refuses() {
+        let h = Harness::new().await;
+        h.mock.set_down(true);
+        let r = probe(&h.state).await;
+        assert_eq!(r.status, StatusCode::OK);
+        assert_eq!(r.body["nas"], "down");
+    }
+
+    #[tokio::test]
+    async fn api_nas_reports_a_certificate_mismatch() {
+        let (mock, _real) = Mock::start_tls(|_, _| crate::truenas::mock::Reply::Ignore).await;
+        // The NAS now presents another certificate than the pinned one.
+        let pin = truenas::Fingerprint::of(b"the certificate it used to have");
+        let ep = Endpoint::new(mock.url.clone(), Some(pin)).unwrap();
+        let r = probe(&state_for(Some(ep))).await;
+        assert_eq!(r.body["nas"], "cert_mismatch");
+    }
+
+    #[tokio::test]
+    async fn api_nas_without_a_nas_is_unavailable() {
+        let r = probe(&state_for(None)).await;
+        assert_eq!(r.status, StatusCode::SERVICE_UNAVAILABLE);
     }
 }

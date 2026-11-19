@@ -219,6 +219,11 @@ impl Mock {
         self.state.lock().unwrap().down = down;
     }
 
+    /// WebSocket connections accepted so far.
+    pub fn conns(&self) -> usize {
+        self.state.lock().unwrap().conns
+    }
+
     /// When each refused socket arrived.
     pub fn refused(&self) -> Vec<Instant> {
         self.state.lock().unwrap().refused.clone()

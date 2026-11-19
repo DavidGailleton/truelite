@@ -143,6 +143,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/login", post(login::password))
         .route("/api/login/otp", post(login::otp))
         .route_layer(DefaultBodyLimit::max(LOGIN_BODY_LIMIT))
+        .route("/api/nas", get(login::reachability))
         .route("/api/session", get(session_info))
         .route("/api/logout", post(logout))
         .route("/ws", get(ws::upgrade))

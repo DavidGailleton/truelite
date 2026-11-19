@@ -34,7 +34,7 @@ pub use error::{AuthFailure, Error};
 pub use events::{Event, Subscription, TopicOptions, Update, UpdateKind};
 #[cfg(test)]
 pub use session::EndReason;
-pub use session::{Endpoint, Link, Session, SessionOptions};
+pub use session::{Endpoint, Link, Reach, Session, SessionOptions};
 pub use tls::Fingerprint;
 
 /// Pinned API version. The NAS (25.10.8) serves `v25.10.0` … `v25.10.5`; the vault reference

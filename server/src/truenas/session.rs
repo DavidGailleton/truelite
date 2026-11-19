@@ -59,6 +59,47 @@ impl Endpoint {
     ) -> Result<(Client, mpsc::Receiver<Notification>), Error> {
         Client::connect(&self.url, self.tls.clone(), opts.client.clone()).await
     }
+
+    /// Whether the NAS answers: opens a socket (TCP, pinned TLS, WebSocket upgrade) within
+    /// `timeout`, without logging in, and closes it. The upgrade only succeeds once the
+    /// middleware serves the API, so `Up` means a login can work again (after a restart).
+    pub async fn probe(&self, timeout: Duration) -> Reach {
+        let opts = Options {
+            connect_timeout: timeout,
+            ..Options::default()
+        };
+        match Client::connect(&self.url, self.tls.clone(), opts).await {
+            Ok(_) => Reach::Up,
+            Err(e @ Error::CertMismatch { .. }) => {
+                tracing::error!("{e}");
+                Reach::CertMismatch
+            }
+            Err(e) => {
+                tracing::debug!("NAS probe failed: {e}");
+                Reach::Down
+            }
+        }
+    }
+}
+
+/// Outcome of [`Endpoint::probe`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reach {
+    Up,
+    Down,
+    /// The NAS presents another certificate than the pinned one.
+    CertMismatch,
+}
+
+impl Reach {
+    /// As the web app names it: `up`, `down` or `cert_mismatch`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Reach::Up => "up",
+            Reach::Down => "down",
+            Reach::CertMismatch => "cert_mismatch",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

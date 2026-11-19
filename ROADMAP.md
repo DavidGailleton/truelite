@@ -79,7 +79,7 @@ reconnecting state.
 - [x] #40 Show available update and release notes
 - [x] #41 Apply update with progress
 - [x] #42 Reboot and shutdown with typed confirmation
-- [ ] #43 "NAS reconnecting" screen
+- [x] #43 "NAS reconnecting" screen
 
 ## Phase 7 — PWA + polish
 
